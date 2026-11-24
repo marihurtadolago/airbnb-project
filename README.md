@@ -32,6 +32,7 @@ A daily Airflow run checks whether a new Madrid snapshot exists. If it does, the
 | [Data lifecycle mapping](docs/lifecycle.md) | How data moves through each lifecycle stage |
 | [Architecture and cluster design](docs/architecture.md) | System components, data organisation and cluster decision |
 | [Orchestration plan](docs/orchestration_plan.md) | Daily schedule, tasks, idempotency and production setup |
+| [Data warehouse model](docs/data_model.md) | Star schema, design decisions and open questions (in progress) |
 
 ## Project status
 
@@ -41,7 +42,7 @@ Checkpoint 2 (25 November 2026): architecture, ETL and monitoring.
 - [x] Architecture and cluster design
 - [x] Orchestration plan
 - [ ] Working ingestion and integration
-- [ ] Data warehouse model
+- [ ] Data warehouse model (in progress: schema defined in `sql/create_tables.sql`)
 - [ ] Logging and alerting design
 
 ## Repository structure
@@ -52,6 +53,7 @@ dags/       Airflow DAG (planned)
 deploy/     Azure job creation script (planned)
 pipeline/   Python pipeline code (planned)
 docs/       project documentation
+sql/        data warehouse schema
 ```
 
 Local folders `data/`, `warehouse/` and `logs/` are created by the pipeline and excluded by `.gitignore`.
