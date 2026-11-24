@@ -41,22 +41,38 @@ Checkpoint 2 (25 November 2026): architecture, ETL and monitoring.
 - [x] Lifecycle mapping
 - [x] Architecture and cluster design
 - [x] Orchestration plan
-- [ ] Working ingestion and integration
+- [x] Working ingestion and integration (Azure upload pending)
 - [ ] Data warehouse model (in progress: schema defined in `sql/create_tables.sql`)
 - [ ] Logging and alerting design
 
 ## Repository structure
 
 ```text
-config/     source URLs and settings (planned)
-dags/       Airflow DAG (planned)
-deploy/     Azure job creation script (planned)
-pipeline/   Python pipeline code (planned)
-docs/       project documentation
-sql/        data warehouse schema
+README.md                 project overview (this file)
+requirements.txt          Python dependencies
+.env.example              template for local secrets (Azure connection string)
+config/sources.json       Inside Airbnb URLs, files and default snapshot
+pipeline/
+  utils.py                shared folders, configuration and logger
+  ingestion.py            download and validate the raw files (tasks 2 and 4)
+  integration.py          clean, combine and validate the data with DuckDB (tasks 5-7)
+sql/create_tables.sql     data warehouse schema (star schema)
+docs/                     lifecycle, architecture, orchestration and data model
+evidence/                 validation reports produced by the pipeline
 ```
 
+Planned: `pipeline/cloud.py` (Azure upload), `pipeline/checks.py`, `pipeline/tasks.py`, `pipeline/run_daily.py`, `dags/` (Airflow DAG) and `deploy/` (Azure scheduled job).
+
 Local folders `data/`, `warehouse/` and `logs/` are created by the pipeline and excluded by `.gitignore`.
+
+## How to run
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m pipeline.ingestion     # download and validate the raw files
+python -m pipeline.integration   # clean, combine and validate; writes evidence/
+```
 
 ## Data
 
