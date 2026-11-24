@@ -180,5 +180,3 @@ docs/orchestration_plan.md      # this document
 ```
 
 If option B is chosen in section 8, we would add `deploy/create_schedule.py`.
-
--
