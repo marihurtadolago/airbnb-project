@@ -1,0 +1,13 @@
+{
+  "city": "madrid",
+  "index_url": "https://insideairbnb.com/get-the-data/",
+  "base_url": "https://data.insideairbnb.com/spain/comunidad-de-madrid/madrid",
+  "default_snapshot_date": "2026-09-17",
+  "files": {
+    "listings": "data/listings.csv.gz",
+    "calendar": "data/calendar.csv.gz",
+    "reviews": "data/reviews.csv.gz",
+    "neighbourhoods": "visualisations/neighbourhoods.csv"
+  },
+  "azure_container": "airbnb-madrid"
+}
