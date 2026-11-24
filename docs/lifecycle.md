@@ -6,7 +6,7 @@ Our project uses four Inside Airbnb datasets for Madrid from the release labelle
 
 The datasets contain listing information, calendar availability, reviews and a neighbourhood reference table. We will combine them to compare Airbnb accommodation across Madrid neighbourhoods.
 
-Our agreed architecture uses Python for processing, Parquet for cleaned files, a local DuckDB warehouse and Azure Blob Storage for a cloud copy of the original data.
+Our agreed architecture uses Python to coordinate the pipeline, DuckDB SQL for validation and transformation, Parquet for cleaned files, a local DuckDB warehouse and Azure Blob Storage for a cloud copy of the original data.
 
 ## 1. Data source
 
@@ -24,7 +24,7 @@ Python reads the dataset URLs from config/sources.json and downloads the files.
 
 Each download is first saved with a temporary .part extension. When it finishes successfully, the file receives its final name. Progress and errors are recorded in a log.
 
-The four files have been downloaded in our local prototype. The planned daily process will check for new releases. If no new release is available, it will record that the check finished without an update.
+The four files were downloaded for a first prototype, which has since been discarded. The download step is being reimplemented. The planned daily process will check for new releases. If no new release is available, it will record that the check finished without an update.
 
 ## 3. Raw storage
 
@@ -57,7 +57,7 @@ These checks have not changed or deleted records. Checks of dates, numerical fie
 
 ## 5. Transformation and integration
 
-Python will select the columns needed for analysis, remove unnecessary spaces and convert values to suitable types.
+SQL queries executed by DuckDB from Python will select the columns needed for analysis, remove unnecessary spaces and convert values to suitable types. DuckDB reads the compressed source files directly and writes Parquet without loading whole datasets into memory.
 
 Records that fail the agreed validation rules will be stored separately with a rejection reason. Unusual values will be investigated before deciding whether to exclude them.
 
@@ -101,7 +101,7 @@ Rejected records will be accessible only to the team and kept only while needed 
 
 ## Current status
 
-Downloads and initial validation have been tested in the previous local prototype.
+The first local prototype has been discarded. Downloads, validation and transformation are being reimplemented, with DuckDB as the processing engine.
 
 Cloud storage, further validation, transformation, integration, warehouse loading and dashboard delivery remain planned stages.
 
@@ -109,7 +109,7 @@ This document describes the lifecycle design. It does not claim that the complet
 
 ## Lifecycle diagram
 
-Solid arrows show stages tested locally. Dashed arrows show planned stages.
+Solid arrows show the core local stages being implemented for Checkpoint 2. Dashed arrows show planned stages.
 
 ```mermaid
 flowchart TD
@@ -119,7 +119,7 @@ flowchart TD
     D --> E["Quality reports"]
 
     B -.-> F["Azure Blob raw storage"]
-    D -.-> G["Transformation and integration"]
+    D -.-> G["Transformation and integration (DuckDB)"]
     G -.-> H["Curated Parquet files"]
     G -.-> I["Rejected records"]
     H -.-> J["DuckDB warehouse"]

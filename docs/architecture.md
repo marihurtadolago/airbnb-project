@@ -2,7 +2,7 @@
 
 ## 1. Architecture overview
 
-Our project uses a batch processing architecture. Python will download, validate and transform the Madrid Inside Airbnb datasets. Cleaned files will be stored in Parquet format and loaded into a local DuckDB warehouse.
+Our project uses a batch processing architecture. Python will download the Madrid Inside Airbnb datasets and coordinate every stage. Validation and transformation will run as SQL queries in DuckDB, called from Python. Cleaned files will be stored in Parquet format and loaded into a local DuckDB warehouse.
 
 Azure Blob Storage will hold a cloud copy of the original files. SQL queries and a dashboard will use the warehouse to compare accommodation across neighbourhoods.
 
@@ -15,7 +15,7 @@ The first version will run on one team member's computer. Azure will provide rem
 | Inside Airbnb | Provides the four source datasets | External website |
 | Python ingestion | Downloads the selected release | Local computer |
 | Raw storage | Keeps the original downloaded files | Local disk and planned Azure copy |
-| Python validation and transformation | Checks, cleans and integrates the data | Local computer |
+| Validation and transformation (DuckDB SQL run from Python) | Checks, cleans and integrates the data | Local computer |
 | Parquet files | Store the cleaned datasets | Local disk |
 | Rejected records | Store invalid records with rejection reasons | Restricted local folder |
 | DuckDB warehouse | Stores the analytical tables | Local computer |
@@ -31,6 +31,8 @@ The pipeline runner will coordinate the processing stages.
 First, it will identify the source release and download the required files. The original files will be kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage.
 
 The validation stage will check required columns, missing values, duplicate keys, dates and numerical values. Transformation will select the required fields and convert them to suitable types.
+
+Both stages will be written as SQL queries executed by DuckDB through its Python API. DuckDB reads the compressed CSV files directly and writes Parquet, so the 8.4 million calendar rows do not have to be loaded into memory at once. Using the same engine for transformation and for the warehouse keeps the stack small.
 
 Valid records will be written to Parquet. Rejected records will be stored separately with an explanation.
 
@@ -69,11 +71,11 @@ In the selected reviews file, the combination of listing_id and id is unique. Re
 
 We will start without a distributed cluster.
 
-The selected listings, calendar and reviews files contain approximately ten million records in total. Downloads and initial checks have run successfully on a local computer. However, the full transformation and warehouse workload has not yet been measured.
+The selected listings, calendar and reviews files contain approximately ten million records in total. The record counts have been confirmed on a local computer. However, the full transformation and warehouse workload has not yet been measured.
 
 A single-machine design is easier for our team to develop, test and explain. A cluster would introduce additional deployment and coordination work before we have evidence that it is needed.
 
-We will measure processing time, peak memory use, disk space and query performance. We will first reduce unnecessary work by selecting the required columns, using Parquet and avoiding joins that multiply records.
+We will measure processing time, peak memory use, disk space and query performance. We will first reduce unnecessary work by selecting the required columns, using Parquet and avoiding joins that multiply records. DuckDB supports this single-machine approach, because it processes large files in a columnar and parallel way without a separate server.
 
 If the workload grows beyond the capacity of one machine, we will evaluate moving processing to a larger cloud machine or a distributed engine. These are future options, not components of the current implementation.
 
@@ -99,7 +101,7 @@ Reviewer names and comments will be excluded from curated outputs because they a
 
 ## 9. Implementation status
 
-Local downloads, basic ingestion logging and initial data quality checks have been tested in the previous prototype.
+A first local prototype was discarded. Ingestion, validation and transformation are being reimplemented, with DuckDB as the processing engine.
 
 The agreed design includes Azure Blob Storage, curated Parquet files and a DuckDB warehouse. Their implementation is still pending in the work reported here.
 
@@ -107,7 +109,7 @@ Daily scheduling, integrated processing, alerting and dashboard delivery are als
 
 ## Architecture diagram
 
-Solid arrows show the local path already tested. Dashed arrows show planned components and connections.
+Solid arrows show the core local path being implemented for Checkpoint 2. Dashed arrows show planned components and connections.
 
 ```mermaid
 flowchart TD
@@ -118,7 +120,7 @@ flowchart TD
         INGEST --> LOGS["Download logs"]
         RAW --> CHECKS["Quality checks"]
         CHECKS --> REPORTS["Validation reports"]
-        CHECKS -.-> TRANSFORM["Transformation and integration"]
+        CHECKS -.-> TRANSFORM["Transformation and integration (DuckDB)"]
         TRANSFORM -.-> PARQUET["Curated Parquet"]
         TRANSFORM -.-> REJECTS["Rejected records"]
         PARQUET -.-> WAREHOUSE["DuckDB warehouse"]
