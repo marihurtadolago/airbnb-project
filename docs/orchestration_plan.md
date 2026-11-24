@@ -22,6 +22,7 @@ Inside Airbnb does not publish daily, so most runs will find nothing new. This i
 |---|---|
 | Main language | Python |
 | Orchestrator | Apache Airflow |
+| Transformation engine | DuckDB SQL, run from Python |
 | Data format | Parquet |
 | Data warehouse | DuckDB |
 | Cloud storage | Azure Blob Storage |
@@ -52,7 +53,7 @@ flowchart TD
     A[Daily trigger 06:00 UTC] --> B{New Madrid snapshot<br/>available?}
     B -- No --> C[Skip remaining tasks<br/>Run ends as SUCCESS]
     B -- Yes --> D[Download the 4 files]
-    D --> E[Store raw files<br/>Azure Blob Storage]
+    D --> E[Store raw files<br/>local + Azure Blob Storage]
     E --> F[Validate raw data]
     F --> G[Clean and transform<br/>write Parquet]
     G --> H[Aggregate calendar<br/>and reviews separately]
@@ -71,10 +72,10 @@ Tasks run in strict sequence. A task only starts if the previous one succeeded. 
 |---|---|---|---|
 | 1 | `check_new_snapshot` | Finds the latest Madrid snapshot date and compares it with the `processed_snapshots` table. If already processed, all downstream tasks are skipped | 3 (5 min apart) |
 | 2 | `download_files` | Downloads `listings`, `calendar`, `reviews` and `neighbourhoods` | 3 (exponential backoff) |
-| 3 | `store_raw` | Saves the original files unchanged in Azure Blob Storage, partitioned by snapshot date | 2 |
+| 3 | `store_raw` | Keeps the original files unchanged in `data/raw/<snapshot_date>/` and uploads a copy to Azure Blob Storage | 2 |
 | 4 | `validate_raw` | Gate: files exist, are not empty, and have the expected columns | 0 |
-| 5 | `transform_clean` | Cleans types, dates and prices, removes duplicates, drops unneeded columns, and writes the result as Parquet | 1 |
-| 6 | `aggregate_calendar_reviews` | Aggregates availability and reviews **separately** before joining, to avoid duplicated counts | 1 |
+| 5 | `transform_clean` | Cleans types, dates and prices with DuckDB SQL and drops unneeded columns. Valid rows are written as Parquet to `data/curated/`; invalid rows go to `data/rejected/` with the reason | 1 |
+| 6 | `aggregate_calendar_reviews` | Builds listing-level availability and review summaries **separately** before joining, to avoid duplicated counts. The detailed calendar and review data are kept for the warehouse | 1 |
 | 7 | `validate_curated` | Gate: keys are unique, and every `listing_id` and neighbourhood matches its reference table | 0 |
 | 8 | `load_warehouse` | Loads the Parquet data into DuckDB: dimension tables first, then fact tables | 2 |
 | 9 | `mark_processed` | Records the snapshot in `processed_snapshots`. Runs **last**, only if everything before it succeeded | 2 |
@@ -93,7 +94,7 @@ The same snapshot must never be loaded twice, and re-running a task must never c
 
 - **State table:** `processed_snapshots(snapshot_date, run_id, loaded_at, status)` is a metadata table inside the data warehouse, next to the fact and dimension tables.
 - **Check step:** `check_new_snapshot` compares the latest published date with this table. If the date is present, the run ends with no updates.
-- **Raw layer is immutable:** files go to `raw/snapshot_date=YYYY-MM-DD/` in Azure Blob Storage and are never overwritten.
+- **Raw layer is immutable:** files go to `data/raw/YYYY-MM-DD/` locally and to `raw/YYYY-MM-DD/` in Azure Blob Storage, and are never overwritten.
 - **Idempotent load:** every fact row carries a `snapshot_date`. The load deletes any existing rows for that date and inserts the new ones in one transaction. Running the same snapshot twice gives the same result.
 - **Failed run recovery:** if the run fails before `mark_processed`, the snapshot is still "new" on the next daily run, which retries it automatically.
 
@@ -109,17 +110,33 @@ The same snapshot must never be loaded twice, and re-running a task must never c
 
 ---
 
-## 8. Production Equivalent (Proposal, Not Yet Decided)
+## 8. Production Equivalent
 
-Leaving Airflow running permanently on a laptop is not realistic, so the repository should include a configuration that would run the same pipeline daily in production, even if we do not leave it running. The team has not yet chosen where this runs. Options, all using the same schedule (`0 6 * * *`, UTC) and the same task order:
+Leaving Airflow running permanently on a laptop is not realistic, so the repository includes a configuration that would run the same pipeline daily in production, even if we do not leave it running. We compared three options, all using the same schedule (`0 6 * * *`, UTC) and the same task order:
 
 | Option | How it works |
 |---|---|
 | A. Airflow in a container on an Azure compute service | The same DAG file runs unchanged on a hosted Airflow instance |
-| B. Scheduled Azure container job | A cron-triggered job runs `python -m pipeline.run_daily`, which executes tasks 1 to 9 in order. It could be created from Python with the Azure SDK (`deploy/create_schedule.py`) |
+| **B. Scheduled Azure container job (chosen)** | A cron-triggered job runs `python -m pipeline.run_daily`, which executes tasks 1 to 9 in order. It is created from Python with the Azure SDK (`deploy/create_schedule.py`) |
 | C. Plain `cron` (minimal fallback) | `0 6 * * * cd /opt/madrid-airbnb && python -m pipeline.run_daily` on any always-on machine with its clock in UTC |
 
-Only the runner changes between options.
+Only the runner changes between options. The task functions are the same.
+
+### Decision: Option B
+
+- **Cost:** the pipeline runs once a day and most runs finish in under a minute, because there is usually no new snapshot. Options A and C need a machine that is always on (A also needs Airflow's own metadata database). Option B starts a container only for the duration of the run.
+- **Cloud through Python APIs:** the scheduled job is created and updated from Python with the Azure SDK, so the production setup is reproducible and not a manual console operation.
+- **Airflow is kept:** the DAG is still used for local development and demonstrations. Airflow and `run_daily.py` call the same task functions.
+
+### Consequences of Option B
+
+| Topic | How it is handled |
+|---|---|
+| Warehouse persistence | The container is deleted after each run, so the DuckDB file cannot live inside it. `run_daily.py` downloads `warehouse/airbnb.duckdb` from Azure Blob Storage at the start and uploads it again only after `mark_processed` succeeds. A failed run therefore never replaces the last successful warehouse |
+| Retries and timeouts | Without Airflow, `run_daily.py` applies the same rules as section 5: the retry count and the 60-minute timeout of each task |
+| No overlapping runs | The job is configured with parallelism 1, which replaces `max_active_runs=1` |
+| Alerts | Failures are logged and sent as an alert by the pipeline itself, instead of an Airflow failure callback. The detailed design belongs to the logging and alerting document |
+| Credentials | The Azure connection settings are passed to the job as secrets, never stored in the repository |
 
 ---
 
@@ -179,4 +196,4 @@ docker-compose.yml              # local Airflow
 docs/orchestration_plan.md      # this document
 ```
 
-If option B is chosen in section 8, we would add `deploy/create_schedule.py`.
+Option B (section 8) also adds `deploy/create_schedule.py`, which creates the scheduled Azure container job with the Azure SDK.

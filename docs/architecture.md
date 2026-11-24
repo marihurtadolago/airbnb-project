@@ -2,7 +2,7 @@
 
 ## 1. Architecture overview
 
-Our project uses a batch processing architecture. Python will download, validate and transform the Madrid Inside Airbnb datasets. Cleaned files will be stored in Parquet format and loaded into a local DuckDB warehouse.
+Our project uses a batch processing architecture. Python will download the Madrid Inside Airbnb datasets and coordinate every stage. Validation and transformation will run as SQL queries in DuckDB, called from Python. Cleaned files will be stored in Parquet format and loaded into a local DuckDB warehouse.
 
 Azure Blob Storage will hold a cloud copy of the original files. SQL queries and a dashboard will use the warehouse to compare accommodation across neighbourhoods.
 
@@ -13,12 +13,13 @@ The first version will run on one team member's computer. Azure will provide rem
 | Component | Role | Location |
 |---|---|---|
 | Inside Airbnb | Provides the four source datasets | External website |
-| Python ingestion | Downloads the selected release | Local computer |
+| Python ingestion | Downloads the selected snapshot | Local computer |
 | Raw storage | Keeps the original downloaded files | Local disk and planned Azure copy |
-| Python validation and transformation | Checks, cleans and integrates the data | Local computer |
+| Validation and transformation (DuckDB SQL run from Python) | Checks, cleans and integrates the data | Local computer |
 | Parquet files | Store the cleaned datasets | Local disk |
 | Rejected records | Store invalid records with rejection reasons | Restricted local folder |
 | DuckDB warehouse | Stores the analytical tables | Local computer |
+| Apache Airflow | Schedules and runs the pipeline once a day | Local computer; in production, a scheduled Azure container job runs the same tasks |
 | Dashboard | Presents aggregate results | Delivery tool to be selected |
 | GitHub | Stores code, configuration examples and documentation | Shared repository |
 
@@ -28,9 +29,11 @@ Azure Blob Storage will be accessed through the Python SDK. Cloud credentials an
 
 The pipeline runner will coordinate the processing stages.
 
-First, it will identify the source release and download the required files. The original files will be kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage.
+First, it will identify the source snapshot and download the required files. The original files will be kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage.
 
 The validation stage will check required columns, missing values, duplicate keys, dates and numerical values. Transformation will select the required fields and convert them to suitable types.
+
+Both stages will be written as SQL queries executed by DuckDB through its Python API. DuckDB reads the compressed CSV files directly and writes Parquet, so the 8.4 million calendar rows do not have to be loaded into memory at once. Using the same engine for transformation and for the warehouse keeps the stack small.
 
 Valid records will be written to Parquet. Rejected records will be stored separately with an explanation.
 
@@ -40,7 +43,7 @@ Each stage will finish before the next dependent stage starts. The pipeline will
 
 ## 4. Data organisation
 
-Files will be organised by release date.
+Files will be organised by snapshot date.
 
 | Location | Contents |
 |---|---|
@@ -51,7 +54,7 @@ Files will be organised by release date.
 | logs/ | Execution logs |
 | evidence/ | Selected validation reports and evidence |
 
-The proposed Azure paths will follow the same release structure, for example madrid/2026-09-17/listings.csv.gz.
+Azure Blob Storage will mirror the local structure, for example raw/2026-09-17/listings.csv.gz.
 
 Source data, cleaned data and the warehouse will remain separate. This allows the team to repeat processing without changing the original files.
 
@@ -69,21 +72,21 @@ In the selected reviews file, the combination of listing_id and id is unique. Re
 
 We will start without a distributed cluster.
 
-The selected listings, calendar and reviews files contain approximately ten million records in total. Downloads and initial checks have run successfully on a local computer. However, the full transformation and warehouse workload has not yet been measured.
+The selected listings, calendar and reviews files contain approximately ten million records in total. The record counts have been confirmed on a local computer. However, the full transformation and warehouse workload has not yet been measured.
 
 A single-machine design is easier for our team to develop, test and explain. A cluster would introduce additional deployment and coordination work before we have evidence that it is needed.
 
-We will measure processing time, peak memory use, disk space and query performance. We will first reduce unnecessary work by selecting the required columns, using Parquet and avoiding joins that multiply records.
+We will measure processing time, peak memory use, disk space and query performance. We will first reduce unnecessary work by selecting the required columns, using Parquet and avoiding joins that multiply records. DuckDB supports this single-machine approach, because it processes large files in a columnar and parallel way without a separate server.
 
 If the workload grows beyond the capacity of one machine, we will evaluate moving processing to a larger cloud machine or a distributed engine. These are future options, not components of the current implementation.
 
 ## 7. Scheduling and monitoring
 
-The planned scheduler will start the pipeline once a day. It will check whether a new Madrid release is available.
+Apache Airflow will start the pipeline once a day at 06:00 UTC. In production, a scheduled Azure container job will run the same tasks, so no machine has to stay on. The schedule, task order and this production decision are described in the [orchestration plan](orchestration_plan.md). It will check whether a new Madrid snapshot is available.
 
-If no new release is found, the run will record that there is no update. If new data is available, the pipeline will process it and mark the release as complete only after all required stages succeed.
+If no new snapshot is found, the run will record that there is no update. If new data is available, the pipeline will process it and mark the snapshot as complete in the processed_snapshots table of the warehouse only after all required stages succeed.
 
-The runner will prevent overlapping executions. Loading the same release again must not create duplicate warehouse records.
+The runner will prevent overlapping executions. Loading the same snapshot again must not create duplicate warehouse records.
 
 Logs will record progress, record counts, durations and errors. Alerts will notify the team when a required stage fails. Their detailed implementation belongs to the orchestration and monitoring tasks.
 
@@ -99,15 +102,15 @@ Reviewer names and comments will be excluded from curated outputs because they a
 
 ## 9. Implementation status
 
-Local downloads, basic ingestion logging and initial data quality checks have been tested in the previous prototype.
+A first local prototype was discarded. Ingestion, validation and transformation are being reimplemented, with DuckDB as the processing engine.
 
 The agreed design includes Azure Blob Storage, curated Parquet files and a DuckDB warehouse. Their implementation is still pending in the work reported here.
 
-Daily scheduling, integrated processing, alerting and dashboard delivery are also pending. The architecture describes the intended system and does not claim that all components are already deployed.
+The orchestration plan has been written. Its implementation, integrated processing, alerting and dashboard delivery are still pending. The architecture describes the intended system and does not claim that all components are already deployed.
 
 ## Architecture diagram
 
-Solid arrows show the local path already tested. Dashed arrows show planned components and connections.
+Solid arrows show the core local path being implemented for Checkpoint 2. Dashed arrows show planned components and connections.
 
 ```mermaid
 flowchart TD
@@ -118,7 +121,7 @@ flowchart TD
         INGEST --> LOGS["Download logs"]
         RAW --> CHECKS["Quality checks"]
         CHECKS --> REPORTS["Validation reports"]
-        CHECKS -.-> TRANSFORM["Transformation and integration"]
+        CHECKS -.-> TRANSFORM["Transformation and integration (DuckDB)"]
         TRANSFORM -.-> PARQUET["Curated Parquet"]
         TRANSFORM -.-> REJECTS["Rejected records"]
         PARQUET -.-> WAREHOUSE["DuckDB warehouse"]

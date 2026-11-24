@@ -2,11 +2,11 @@
 
 ## Project scope
 
-Our project uses four Inside Airbnb datasets for Madrid from the release labelled 17 September 2026.
+Our project uses four Inside Airbnb datasets for Madrid from the snapshot labelled 17 September 2026.
 
 The datasets contain listing information, calendar availability, reviews and a neighbourhood reference table. We will combine them to compare Airbnb accommodation across Madrid neighbourhoods.
 
-Our agreed architecture uses Python for processing, Parquet for cleaned files, a local DuckDB warehouse and Azure Blob Storage for a cloud copy of the original data.
+Our agreed architecture uses Python to coordinate the pipeline, DuckDB SQL for validation and transformation, Parquet for cleaned files, a local DuckDB warehouse and Azure Blob Storage for a cloud copy of the original data.
 
 ## 1. Data source
 
@@ -16,7 +16,7 @@ https://insideairbnb.com/get-the-data/
 
 We use listings.csv.gz, calendar.csv.gz, reviews.csv.gz and neighbourhoods.csv.
 
-The release label identifies the selected publication. Individual records may have different collection dates.
+The snapshot date (2026-09-17) identifies the selected publication and is used to name every folder and output. Individual records may have different collection dates.
 
 ## 2. Ingestion
 
@@ -24,13 +24,13 @@ Python reads the dataset URLs from config/sources.json and downloads the files.
 
 Each download is first saved with a temporary .part extension. When it finishes successfully, the file receives its final name. Progress and errors are recorded in a log.
 
-The four files have been downloaded in our local prototype. The planned daily process will check for new releases. If no new release is available, it will record that the check finished without an update.
+The four files were downloaded for a first prototype, which has since been discarded. The download step is being reimplemented. The planned daily process will check for new snapshots. If no new snapshot is available, it will record that the check finished without an update.
 
 ## 3. Raw storage
 
 Original files are stored locally in data/raw/2026-09-17/. They are not edited manually.
 
-We will also upload a copy to Azure Blob Storage using the Python SDK. Files will be organised by city and release date.
+We will also upload a copy to Azure Blob Storage using the Python SDK. Files will follow the same folder structure as local storage, for example raw/2026-09-17/listings.csv.gz.
 
 The local files are available. The cloud storage step is planned.
 
@@ -46,7 +46,7 @@ The completed local checks found these record counts.
 |---|---:|
 | Listings | 23,109 |
 | Calendar | 8,438,629 |
-| Reviews | 1,524,765 |
+| Reviews | approx. 1.5 million |
 | Neighbourhoods | 128 |
 
 No missing values were found in the selected columns.
@@ -57,7 +57,7 @@ These checks have not changed or deleted records. Checks of dates, numerical fie
 
 ## 5. Transformation and integration
 
-Python will select the columns needed for analysis, remove unnecessary spaces and convert values to suitable types.
+SQL queries executed by DuckDB from Python will select the columns needed for analysis, remove unnecessary spaces and convert values to suitable types. DuckDB reads the compressed source files directly and writes Parquet without loading whole datasets into memory.
 
 Records that fail the agreed validation rules will be stored separately with a rejection reason. Unusual values will be investigated before deciding whether to exclude them.
 
@@ -73,7 +73,7 @@ Cleaned datasets will be saved as Parquet files in data/curated/2026-09-17/.
 
 Rejected records will be saved in data/rejected/2026-09-17/ with the reasons for rejection.
 
-Outputs will identify their source release. Original files will remain separate so that processing can be repeated.
+Outputs will identify their source snapshot. Original files will remain separate so that processing can be repeated.
 
 ## 7. Warehouse loading
 
@@ -81,13 +81,13 @@ The cleaned data will be loaded into a local DuckDB warehouse.
 
 The warehouse will contain related tables for listings, neighbourhoods, dates, availability and review activity. Its detailed model and loading process will be developed as a separate team task.
 
-Processing the same release again must not create duplicate warehouse records. An incomplete load must not replace the last successful published results.
+Processing the same snapshot again must not create duplicate warehouse records. An incomplete load must not replace the last successful published results.
 
 ## 8. Consumption
 
 SQL queries and a dashboard will allow users to compare listing counts, accommodation types, advertised availability and review activity across neighbourhoods.
 
-Outputs will show the release and time period used. Unavailable dates will not be treated as confirmed bookings, and review counts will not be treated as booking counts.
+Outputs will show the snapshot and time period used. Unavailable dates will not be treated as confirmed bookings, and review counts will not be treated as booking counts.
 
 Users will receive aggregate results rather than personal reviewer information.
 
@@ -101,7 +101,7 @@ Rejected records will be accessible only to the team and kept only while needed 
 
 ## Current status
 
-Downloads and initial validation have been tested in the previous local prototype.
+The first local prototype has been discarded. Downloads, validation and transformation are being reimplemented, with DuckDB as the processing engine.
 
 Cloud storage, further validation, transformation, integration, warehouse loading and dashboard delivery remain planned stages.
 
@@ -109,7 +109,7 @@ This document describes the lifecycle design. It does not claim that the complet
 
 ## Lifecycle diagram
 
-Solid arrows show stages tested locally. Dashed arrows show planned stages.
+Solid arrows show the core local stages being implemented for Checkpoint 2. Dashed arrows show planned stages.
 
 ```mermaid
 flowchart TD
@@ -119,7 +119,7 @@ flowchart TD
     D --> E["Quality reports"]
 
     B -.-> F["Azure Blob raw storage"]
-    D -.-> G["Transformation and integration"]
+    D -.-> G["Transformation and integration (DuckDB)"]
     G -.-> H["Curated Parquet files"]
     G -.-> I["Rejected records"]
     H -.-> J["DuckDB warehouse"]
