@@ -13,12 +13,13 @@ The first version will run on one team member's computer. Azure will provide rem
 | Component | Role | Location |
 |---|---|---|
 | Inside Airbnb | Provides the four source datasets | External website |
-| Python ingestion | Downloads the selected release | Local computer |
+| Python ingestion | Downloads the selected snapshot | Local computer |
 | Raw storage | Keeps the original downloaded files | Local disk and planned Azure copy |
 | Validation and transformation (DuckDB SQL run from Python) | Checks, cleans and integrates the data | Local computer |
 | Parquet files | Store the cleaned datasets | Local disk |
 | Rejected records | Store invalid records with rejection reasons | Restricted local folder |
 | DuckDB warehouse | Stores the analytical tables | Local computer |
+| Apache Airflow | Schedules and runs the pipeline once a day | Local computer (production option to be decided) |
 | Dashboard | Presents aggregate results | Delivery tool to be selected |
 | GitHub | Stores code, configuration examples and documentation | Shared repository |
 
@@ -28,7 +29,7 @@ Azure Blob Storage will be accessed through the Python SDK. Cloud credentials an
 
 The pipeline runner will coordinate the processing stages.
 
-First, it will identify the source release and download the required files. The original files will be kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage.
+First, it will identify the source snapshot and download the required files. The original files will be kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage.
 
 The validation stage will check required columns, missing values, duplicate keys, dates and numerical values. Transformation will select the required fields and convert them to suitable types.
 
@@ -42,7 +43,7 @@ Each stage will finish before the next dependent stage starts. The pipeline will
 
 ## 4. Data organisation
 
-Files will be organised by release date.
+Files will be organised by snapshot date.
 
 | Location | Contents |
 |---|---|
@@ -53,7 +54,7 @@ Files will be organised by release date.
 | logs/ | Execution logs |
 | evidence/ | Selected validation reports and evidence |
 
-The proposed Azure paths will follow the same release structure, for example madrid/2026-09-17/listings.csv.gz.
+Azure Blob Storage will mirror the local structure, for example raw/2026-09-17/listings.csv.gz.
 
 Source data, cleaned data and the warehouse will remain separate. This allows the team to repeat processing without changing the original files.
 
@@ -81,11 +82,11 @@ If the workload grows beyond the capacity of one machine, we will evaluate movin
 
 ## 7. Scheduling and monitoring
 
-The planned scheduler will start the pipeline once a day. It will check whether a new Madrid release is available.
+Apache Airflow will start the pipeline once a day at 06:00 UTC. The schedule, task order and production options are described in the [orchestration plan](orchestration_plan.md). It will check whether a new Madrid snapshot is available.
 
-If no new release is found, the run will record that there is no update. If new data is available, the pipeline will process it and mark the release as complete only after all required stages succeed.
+If no new snapshot is found, the run will record that there is no update. If new data is available, the pipeline will process it and mark the snapshot as complete in the processed_snapshots table of the warehouse only after all required stages succeed.
 
-The runner will prevent overlapping executions. Loading the same release again must not create duplicate warehouse records.
+The runner will prevent overlapping executions. Loading the same snapshot again must not create duplicate warehouse records.
 
 Logs will record progress, record counts, durations and errors. Alerts will notify the team when a required stage fails. Their detailed implementation belongs to the orchestration and monitoring tasks.
 
@@ -105,7 +106,7 @@ A first local prototype was discarded. Ingestion, validation and transformation 
 
 The agreed design includes Azure Blob Storage, curated Parquet files and a DuckDB warehouse. Their implementation is still pending in the work reported here.
 
-Daily scheduling, integrated processing, alerting and dashboard delivery are also pending. The architecture describes the intended system and does not claim that all components are already deployed.
+The orchestration plan has been written. Its implementation, integrated processing, alerting and dashboard delivery are still pending. The architecture describes the intended system and does not claim that all components are already deployed.
 
 ## Architecture diagram
 

@@ -2,7 +2,7 @@
 
 ## Project scope
 
-Our project uses four Inside Airbnb datasets for Madrid from the release labelled 17 September 2026.
+Our project uses four Inside Airbnb datasets for Madrid from the snapshot labelled 17 September 2026.
 
 The datasets contain listing information, calendar availability, reviews and a neighbourhood reference table. We will combine them to compare Airbnb accommodation across Madrid neighbourhoods.
 
@@ -16,7 +16,7 @@ https://insideairbnb.com/get-the-data/
 
 We use listings.csv.gz, calendar.csv.gz, reviews.csv.gz and neighbourhoods.csv.
 
-The release label identifies the selected publication. Individual records may have different collection dates.
+The snapshot date (2026-09-17) identifies the selected publication and is used to name every folder and output. Individual records may have different collection dates.
 
 ## 2. Ingestion
 
@@ -24,13 +24,13 @@ Python reads the dataset URLs from config/sources.json and downloads the files.
 
 Each download is first saved with a temporary .part extension. When it finishes successfully, the file receives its final name. Progress and errors are recorded in a log.
 
-The four files were downloaded for a first prototype, which has since been discarded. The download step is being reimplemented. The planned daily process will check for new releases. If no new release is available, it will record that the check finished without an update.
+The four files were downloaded for a first prototype, which has since been discarded. The download step is being reimplemented. The planned daily process will check for new snapshots. If no new snapshot is available, it will record that the check finished without an update.
 
 ## 3. Raw storage
 
 Original files are stored locally in data/raw/2026-09-17/. They are not edited manually.
 
-We will also upload a copy to Azure Blob Storage using the Python SDK. Files will be organised by city and release date.
+We will also upload a copy to Azure Blob Storage using the Python SDK. Files will follow the same folder structure as local storage, for example raw/2026-09-17/listings.csv.gz.
 
 The local files are available. The cloud storage step is planned.
 
@@ -73,7 +73,7 @@ Cleaned datasets will be saved as Parquet files in data/curated/2026-09-17/.
 
 Rejected records will be saved in data/rejected/2026-09-17/ with the reasons for rejection.
 
-Outputs will identify their source release. Original files will remain separate so that processing can be repeated.
+Outputs will identify their source snapshot. Original files will remain separate so that processing can be repeated.
 
 ## 7. Warehouse loading
 
@@ -81,13 +81,13 @@ The cleaned data will be loaded into a local DuckDB warehouse.
 
 The warehouse will contain related tables for listings, neighbourhoods, dates, availability and review activity. Its detailed model and loading process will be developed as a separate team task.
 
-Processing the same release again must not create duplicate warehouse records. An incomplete load must not replace the last successful published results.
+Processing the same snapshot again must not create duplicate warehouse records. An incomplete load must not replace the last successful published results.
 
 ## 8. Consumption
 
 SQL queries and a dashboard will allow users to compare listing counts, accommodation types, advertised availability and review activity across neighbourhoods.
 
-Outputs will show the release and time period used. Unavailable dates will not be treated as confirmed bookings, and review counts will not be treated as booking counts.
+Outputs will show the snapshot and time period used. Unavailable dates will not be treated as confirmed bookings, and review counts will not be treated as booking counts.
 
 Users will receive aggregate results rather than personal reviewer information.
 
