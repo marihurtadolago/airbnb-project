@@ -1,0 +1,6 @@
+# Python dependencies for the Madrid Airbnb pipeline.
+# Install with: pip install -r requirements.txt
+duckdb              # validation, transformation and data warehouse
+requests            # downloading files from Inside Airbnb
+azure-storage-blob  # Azure Blob Storage SDK (cloud copy of raw and curated data)
+python-dotenv       # loads local settings and secrets from the .env file

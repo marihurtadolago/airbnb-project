@@ -1,0 +1,42 @@
+{
+  "snapshot_date": "2026-09-17",
+  "transform_clean": {
+    "neighbourhoods": {
+      "rows_read": 128,
+      "rows_valid": 128,
+      "rows_rejected": 0,
+      "reject_reasons": {}
+    },
+    "listings": {
+      "rows_read": 23109,
+      "rows_valid": 23109,
+      "rows_rejected": 0,
+      "reject_reasons": {}
+    },
+    "calendar": {
+      "rows_read": 8438629,
+      "rows_valid": 8438629,
+      "rows_rejected": 0,
+      "reject_reasons": {}
+    },
+    "reviews": {
+      "rows_read": 1524765,
+      "rows_valid": 1524765,
+      "rows_rejected": 0,
+      "reject_reasons": {}
+    }
+  },
+  "aggregate_all": {
+    "listing_summary_rows": 23109
+  },
+  "validate_curated": {
+    "listings: duplicate listing_id": 0,
+    "calendar: duplicate (listing_id, date)": 0,
+    "reviews: duplicate (listing_id, review_id)": 0,
+    "calendar: listing_id not in listings": 0,
+    "reviews: listing_id not in listings": 0,
+    "listings: neighbourhood not in reference": 0,
+    "listing_summary: row count differs from listings": 0
+  },
+  "duration_seconds": 9.3
+}
