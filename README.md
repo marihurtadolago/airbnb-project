@@ -12,7 +12,7 @@ The project studies where Airbnb accommodation is concentrated in Madrid and how
 | Validation and transformation | DuckDB SQL, run from Python |
 | Data format | Parquet |
 | Data warehouse | DuckDB (local) |
-| Orchestration | Apache Airflow, daily at 06:00 UTC |
+| Orchestration | Apache Airflow, daily at 06:00 UTC (local); scheduled Azure container job in production |
 | Cloud storage | Azure Blob Storage, accessed through the Python SDK |
 | Dashboard | To be decided |
 
@@ -31,7 +31,7 @@ A daily Airflow run checks whether a new Madrid snapshot exists. If it does, the
 |---|---|
 | [Data lifecycle mapping](docs/lifecycle.md) | How data moves through each lifecycle stage |
 | [Architecture and cluster design](docs/architecture.md) | System components, data organisation and cluster decision |
-| [Orchestration plan](docs/orchestration_plan.md) | Daily schedule, tasks, idempotency and production options |
+| [Orchestration plan](docs/orchestration_plan.md) | Daily schedule, tasks, idempotency and production setup |
 
 ## Project status
 
@@ -39,7 +39,7 @@ Checkpoint 2 (25 November 2026): architecture, ETL and monitoring.
 
 - [x] Lifecycle mapping
 - [x] Architecture and cluster design
-- [x] Orchestration plan (production option still to be decided)
+- [x] Orchestration plan
 - [ ] Working ingestion and integration
 - [ ] Data warehouse model
 - [ ] Logging and alerting design
@@ -49,6 +49,7 @@ Checkpoint 2 (25 November 2026): architecture, ETL and monitoring.
 ```text
 config/     source URLs and settings (planned)
 dags/       Airflow DAG (planned)
+deploy/     Azure job creation script (planned)
 pipeline/   Python pipeline code (planned)
 docs/       project documentation
 ```

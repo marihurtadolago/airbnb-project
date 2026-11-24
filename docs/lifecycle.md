@@ -46,7 +46,7 @@ The completed local checks found these record counts.
 |---|---:|
 | Listings | 23,109 |
 | Calendar | 8,438,629 |
-| Reviews | 1,524,765 |
+| Reviews | approx. 1.5 million |
 | Neighbourhoods | 128 |
 
 No missing values were found in the selected columns.

@@ -110,17 +110,33 @@ The same snapshot must never be loaded twice, and re-running a task must never c
 
 ---
 
-## 8. Production Equivalent (Proposal, Not Yet Decided)
+## 8. Production Equivalent
 
-Leaving Airflow running permanently on a laptop is not realistic, so the repository should include a configuration that would run the same pipeline daily in production, even if we do not leave it running. The team has not yet chosen where this runs. Options, all using the same schedule (`0 6 * * *`, UTC) and the same task order:
+Leaving Airflow running permanently on a laptop is not realistic, so the repository includes a configuration that would run the same pipeline daily in production, even if we do not leave it running. We compared three options, all using the same schedule (`0 6 * * *`, UTC) and the same task order:
 
 | Option | How it works |
 |---|---|
 | A. Airflow in a container on an Azure compute service | The same DAG file runs unchanged on a hosted Airflow instance |
-| B. Scheduled Azure container job | A cron-triggered job runs `python -m pipeline.run_daily`, which executes tasks 1 to 9 in order. It could be created from Python with the Azure SDK (`deploy/create_schedule.py`) |
+| **B. Scheduled Azure container job (chosen)** | A cron-triggered job runs `python -m pipeline.run_daily`, which executes tasks 1 to 9 in order. It is created from Python with the Azure SDK (`deploy/create_schedule.py`) |
 | C. Plain `cron` (minimal fallback) | `0 6 * * * cd /opt/madrid-airbnb && python -m pipeline.run_daily` on any always-on machine with its clock in UTC |
 
-Only the runner changes between options.
+Only the runner changes between options. The task functions are the same.
+
+### Decision: Option B
+
+- **Cost:** the pipeline runs once a day and most runs finish in under a minute, because there is usually no new snapshot. Options A and C need a machine that is always on (A also needs Airflow's own metadata database). Option B starts a container only for the duration of the run.
+- **Cloud through Python APIs:** the scheduled job is created and updated from Python with the Azure SDK, so the production setup is reproducible and not a manual console operation.
+- **Airflow is kept:** the DAG is still used for local development and demonstrations. Airflow and `run_daily.py` call the same task functions.
+
+### Consequences of Option B
+
+| Topic | How it is handled |
+|---|---|
+| Warehouse persistence | The container is deleted after each run, so the DuckDB file cannot live inside it. `run_daily.py` downloads `warehouse/airbnb.duckdb` from Azure Blob Storage at the start and uploads it again only after `mark_processed` succeeds. A failed run therefore never replaces the last successful warehouse |
+| Retries and timeouts | Without Airflow, `run_daily.py` applies the same rules as section 5: the retry count and the 60-minute timeout of each task |
+| No overlapping runs | The job is configured with parallelism 1, which replaces `max_active_runs=1` |
+| Alerts | Failures are logged and sent as an alert by the pipeline itself, instead of an Airflow failure callback. The detailed design belongs to the logging and alerting document |
+| Credentials | The Azure connection settings are passed to the job as secrets, never stored in the repository |
 
 ---
 
@@ -180,4 +196,4 @@ docker-compose.yml              # local Airflow
 docs/orchestration_plan.md      # this document
 ```
 
-If option B is chosen in section 8, we would add `deploy/create_schedule.py`.
+Option B (section 8) also adds `deploy/create_schedule.py`, which creates the scheduled Azure container job with the Azure SDK.

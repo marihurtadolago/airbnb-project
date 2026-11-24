@@ -19,7 +19,7 @@ The first version will run on one team member's computer. Azure will provide rem
 | Parquet files | Store the cleaned datasets | Local disk |
 | Rejected records | Store invalid records with rejection reasons | Restricted local folder |
 | DuckDB warehouse | Stores the analytical tables | Local computer |
-| Apache Airflow | Schedules and runs the pipeline once a day | Local computer (production option to be decided) |
+| Apache Airflow | Schedules and runs the pipeline once a day | Local computer; in production, a scheduled Azure container job runs the same tasks |
 | Dashboard | Presents aggregate results | Delivery tool to be selected |
 | GitHub | Stores code, configuration examples and documentation | Shared repository |
 
@@ -82,7 +82,7 @@ If the workload grows beyond the capacity of one machine, we will evaluate movin
 
 ## 7. Scheduling and monitoring
 
-Apache Airflow will start the pipeline once a day at 06:00 UTC. The schedule, task order and production options are described in the [orchestration plan](orchestration_plan.md). It will check whether a new Madrid snapshot is available.
+Apache Airflow will start the pipeline once a day at 06:00 UTC. In production, a scheduled Azure container job will run the same tasks, so no machine has to stay on. The schedule, task order and this production decision are described in the [orchestration plan](orchestration_plan.md). It will check whether a new Madrid snapshot is available.
 
 If no new snapshot is found, the run will record that there is no update. If new data is available, the pipeline will process it and mark the snapshot as complete in the processed_snapshots table of the warehouse only after all required stages succeed.
 
