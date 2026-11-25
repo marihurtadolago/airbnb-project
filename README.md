@@ -34,6 +34,7 @@ A daily Airflow run checks whether a new Madrid snapshot exists. If it does, the
 | [Orchestration plan](docs/orchestration_plan.md) | Daily schedule, tasks, idempotency and production setup |
 | [Data warehouse model](docs/data_model.md) | Star schema, design decisions and open questions (in progress) |
 | [Logging and alerting](docs/logging_alerting.md) | What is logged, where, alert rules and the webhook channel |
+| [Checkpoint 2 status](docs/checkpoint2_status.md) | Written status update for Checkpoint 2 |
 
 ## Project status
 
