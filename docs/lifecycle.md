@@ -24,7 +24,7 @@ Python reads the dataset URLs from config/sources.json and downloads the files.
 
 Each download is first saved with a temporary .part extension. When it finishes successfully, the file receives its final name. Progress and errors are recorded in a log.
 
-This step is implemented in `pipeline/ingestion.py`, and the four files of snapshot 2026-09-17 have been downloaded with it. A file that is already in raw storage is not downloaded again. The planned daily process will check for new snapshots. If no new snapshot is available, it will record that the check finished without an update.
+This step is implemented in `pipeline/ingestion.py`, and the four files of snapshot 2026-09-17 have been downloaded with it. A file that is already in raw storage is not downloaded again, so a failed run can be repeated safely. The planned daily process will check for new snapshots. If no new snapshot is available, it will record that the check finished without an update.
 
 ## 3. Raw storage
 
@@ -77,7 +77,7 @@ Reviewer names, reviewer ids and comments are never read, because they are not n
 
 Cleaned datasets are saved as Parquet files in data/curated/2026-09-17/, together with `listing_summary.parquet`.
 
-Rejected records are saved in data/rejected/2026-09-17/ with the reasons for rejection.
+Rejected records are saved in data/rejected/2026-09-17/ with the reasons for rejection. For snapshot 2026-09-17 no record was rejected (see evidence/2026-09-17_integration_report.json).
 
 Outputs identify their source snapshot. Original files will remain separate so that processing can be repeated.
 

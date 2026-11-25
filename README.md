@@ -47,6 +47,7 @@ The integration produces a listing-level summary of 23,109 rows and passes all 1
 | [Orchestration plan](docs/orchestration_plan.md) | Daily schedule, tasks, idempotency and production setup |
 | [Data warehouse model](docs/data_model.md) | Star schema, design decisions and open questions (in progress) |
 | [Logging and alerting](docs/logging_alerting.md) | What is logged, where, alert rules and the webhook channel |
+| [Checkpoint 2 status](docs/checkpoint2_status.md) | Written status update for Checkpoint 2 |
 
 ## Project status
 
@@ -73,7 +74,7 @@ pipeline/
   ingestion.py            download and validate the raw files (tasks 2 and 4)
   integration.py          clean, combine and validate the data with DuckDB (tasks 5-7)
 sql/create_tables.sql     data warehouse schema (star schema)
-docs/                     lifecycle, architecture, orchestration, data model, logging and alerting
+docs/                     lifecycle, architecture, orchestration, data model, logging and alerting, Checkpoint 2 status
 evidence/
   2026-09-17_integration_report.json        validation and integration results
   benchmark_star_vs_snowflake.py            star vs snowflake measurement (data model decision)

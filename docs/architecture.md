@@ -72,7 +72,7 @@ In the selected reviews file, the combination of listing_id and id is unique. Re
 
 We will start without a distributed cluster.
 
-The selected listings, calendar and reviews files contain approximately ten million records in total. Ingestion, validation and integration of these records run on a laptop: the integration stage takes about 10 seconds (see `evidence/2026-09-17_integration_report.json`). Warehouse loading and the Azure upload have not been measured yet.
+The selected listings, calendar and reviews files contain approximately ten million records in total. Ingestion, validation and integration of these records run on a laptop: the integration stage takes about 10 seconds (see `evidence/2026-09-17_integration_report.json`), and downloading the four files (about 206 MB) took between 13 seconds and about 2 minutes in our test runs, depending on the connection. Warehouse loading and the Azure upload have not been measured yet.
 
 A single-machine design is easier for our team to develop, test and explain. A cluster would introduce additional deployment and coordination work before we have evidence that it is needed.
 
@@ -88,7 +88,7 @@ If no new snapshot is found, the run will record that there is no update. If new
 
 Overlapping executions must be prevented. In Airflow, `max_active_runs=1` does this. In production, scheduled Azure container job executions can overlap, so the runner will take a lock (a lease on a blob in Azure Blob Storage) before downloading, changing and uploading the warehouse. Loading the same snapshot again must not create duplicate warehouse records.
 
-Logs record progress, record counts, durations and errors, and each run is summarised in `logs/runs.jsonl`. Alerts notify the team through a chat webhook when a run fails. The design is described in [logging_alerting.md](logging_alerting.md).
+Logs record progress, record counts, durations and errors, every line carries the id of its run, and each run is summarised in `logs/runs.jsonl`. Alerts notify the team through a chat webhook when a run fails or the data looks wrong. Both are implemented in `pipeline/monitoring.py` and `pipeline/alerts.py`. The design is described in [logging_alerting.md](logging_alerting.md).
 
 ## 8. Failure handling and access
 
@@ -122,6 +122,7 @@ flowchart TD
         CHECKS --> TRANSFORM["Transformation and integration (DuckDB)"]
         TRANSFORM --> PARQUET["Curated Parquet"]
         TRANSFORM --> REJECTS["Rejected records"]
+        TRANSFORM --> LOGS
         PARQUET -.-> WAREHOUSE["DuckDB warehouse"]
     end
 
@@ -129,7 +130,7 @@ flowchart TD
     SCHEDULER["Daily scheduler"] -.-> INGEST
     WAREHOUSE -.-> DASHBOARD["Dashboard"]
 
-    INGEST --> ALERTS["Failure alerts"]
+    INGEST --> ALERTS["Alerts (chat webhook)"]
     CHECKS --> ALERTS
     TRANSFORM --> ALERTS
     WAREHOUSE -.-> ALERTS

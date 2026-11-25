@@ -44,7 +44,7 @@ Inside Airbnb does not publish daily, so most runs will find nothing new. This i
 | Concurrency | `max_active_runs=1`. This also protects the DuckDB warehouse, which accepts only one writing process at a time |
 | Task timeout | 60 minutes per task (`execution_timeout`), provisional |
 
-**Why 60 minutes, and why it is provisional:** the measured stages are far below the limit. In our test run, downloading the four files (about 206 MB) took 12.7 seconds on a home connection, and validation, transformation and integration of the ~10 million rows take about 10 seconds (`evidence/2026-09-17_integration_report.json`). The Azure upload and the warehouse load have not been measured yet, so the limit is kept generous and will be reviewed once every task has been timed. On a day with no new snapshot, the run only executes `check_new_snapshot` and finishes in under a minute.
+**Why 60 minutes, and why it is provisional:** the measured stages are far below the limit. In our test runs, downloading the four files (about 206 MB) took between 13 seconds and about 2 minutes, depending on the connection, and validation, transformation and integration of the ~10 million rows take about 10 seconds (`evidence/2026-09-17_integration_report.json`). The Azure upload and the warehouse load have not been measured yet, so the limit is kept generous and will be reviewed once every task has been timed. On a day with no new snapshot, the run only executes `check_new_snapshot` and finishes in under a minute.
 
 ---
 
