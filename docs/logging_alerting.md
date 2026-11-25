@@ -86,7 +86,7 @@ Rules 1 to 4 are implemented in `pipeline/monitoring.py` (rule 4 is not called y
 
 ## 5. Alert channel
 
-Alerts are sent to a team chat channel through an **incoming webhook** (Discord or Slack). Microsoft Teams webhooks expect a different message format, so Teams is not supported by the current code. We chose a webhook over email because:
+Alerts are sent to a channel of the team's **Microsoft Teams**, the tool we already use for our meetings, through a webhook. The webhook is created with the Teams **Workflows** app (template "Send webhook alerts to a channel"), which only accepts messages as an Adaptive Card, so `build_payload` in `pipeline/alerts.py` formats the alert as one: a bold title coloured by severity, followed by one line per detail. Discord and Slack webhooks also work: the format is chosen from the URL. We chose a webhook over email because:
 
 - it is a single HTTP request with the `requests` library we already use, with no mail server and no password to store;
 - the whole team sees the alert in the same place, and can discuss it there;

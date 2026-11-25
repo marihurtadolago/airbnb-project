@@ -1,9 +1,10 @@
 """Send pipeline alerts to the team chat through an incoming webhook.
 
-The webhook URL is read from ALERT_WEBHOOK_URL in the .env file. The message format works for Discord and Slack incoming webhooks
-(Microsoft Teams expects a different format and is not supported). If the variable
-is empty, the alert is only written to the log, so the pipeline still runs on a
-computer without any setup.
+The webhook URL is read from ALERT_WEBHOOK_URL in the .env file. The team uses a
+Microsoft Teams channel (webhook created with the Teams Workflows app); Discord and
+Slack incoming webhooks also work. The message format is chosen from the URL. If
+the variable is empty, the alert is only written to the log, so the pipeline still
+runs on a computer without any setup.
 
 Check that the channel works with:
     python -m pipeline.alerts --test
@@ -23,6 +24,30 @@ log = get_logger("alerts")
 
 MAX_MESSAGE_LENGTH = 2000  # Discord rejects longer messages
 TIMEOUT_SECONDS = 10
+COLORS = {"CRITICAL": "attention", "WARNING": "warning"}  # Teams text colors
+
+
+def build_payload(url: str, severity: str, title: str, details: str) -> dict:
+    """Return the JSON body each chat service expects.
+
+    Teams Workflows webhooks only accept an Adaptive Card. Each line of the details
+    goes in its own text block, because Teams ignores single line breaks.
+    """
+    text = f"[{severity}] Madrid Airbnb pipeline: {title}"
+    if "discord.com" in url:
+        return {"content": f"{text}\n{details}"[:MAX_MESSAGE_LENGTH]}
+    if "hooks.slack.com" in url:
+        return {"text": f"{text}\n{details}"}
+
+    body = [{"type": "TextBlock", "text": text, "weight": "Bolder", "wrap": True,
+             "color": COLORS.get(severity, "default")}]
+    body += [{"type": "TextBlock", "text": line, "wrap": True, "spacing": "None"}
+             for line in details.splitlines() if line.strip()]
+    card = {"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+            "type": "AdaptiveCard", "version": "1.4", "body": body}
+    return {"type": "message",
+            "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive",
+                             "contentUrl": None, "content": card}]}
 
 
 def send_alert(severity: str, title: str, details: str = "") -> bool:
@@ -41,9 +66,8 @@ def send_alert(severity: str, title: str, details: str = "") -> bool:
         log.warning("ALERT_WEBHOOK_URL is not set, alert written to the log only")
         return False
 
-    message = message[:MAX_MESSAGE_LENGTH]
     try:
-        response = requests.post(url, json={"content": message, "text": message},
+        response = requests.post(url, json=build_payload(url, severity, title, details),
                                  timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
     except requests.RequestException as exc:
