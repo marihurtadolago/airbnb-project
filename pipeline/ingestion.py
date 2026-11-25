@@ -21,6 +21,7 @@ from pathlib import Path
 
 import requests
 
+from pipeline.monitoring import monitored_run, monitored_task
 from pipeline.utils import get_logger, load_config, snapshot_dirs
 
 log = get_logger("ingestion")
@@ -61,6 +62,7 @@ def download_file(url: str, target: Path) -> int:
     return target.stat().st_size
 
 
+@monitored_task
 def download_files(snapshot_date: str) -> dict:
     """Task 2: download the four source files of one snapshot.
 
@@ -95,6 +97,7 @@ def read_header(path: Path) -> list:
         return next(csv.reader(f))
 
 
+@monitored_task
 def validate_raw(snapshot_date: str) -> dict:
     """Task 4: quality gate on the raw files.
 
@@ -136,5 +139,6 @@ def validate_raw(snapshot_date: str) -> dict:
 
 if __name__ == "__main__":
     date = sys.argv[1] if len(sys.argv) > 1 else load_config()["default_snapshot_date"]
-    download_files(date)
-    validate_raw(date)
+    with monitored_run(date):
+        download_files(date)
+        validate_raw(date)

@@ -33,6 +33,7 @@ A daily Airflow run checks whether a new Madrid snapshot exists. If it does, the
 | [Architecture and cluster design](docs/architecture.md) | System components, data organisation and cluster decision |
 | [Orchestration plan](docs/orchestration_plan.md) | Daily schedule, tasks, idempotency and production setup |
 | [Data warehouse model](docs/data_model.md) | Star schema, design decisions and open questions (in progress) |
+| [Logging and alerting](docs/logging_alerting.md) | What is logged, where, alert rules and the webhook channel |
 
 ## Project status
 
@@ -43,17 +44,19 @@ Checkpoint 2 (25 November 2026): architecture, ETL and monitoring.
 - [x] Orchestration plan
 - [x] Working ingestion and integration (Azure upload pending)
 - [ ] Data warehouse model (in progress: schema defined in `sql/create_tables.sql`)
-- [ ] Logging and alerting design
+- [x] Logging and alerting design (log/run history upload to Azure pending)
 
 ## Repository structure
 
 ```text
 README.md                 project overview (this file)
 requirements.txt          Python dependencies
-.env.example              template for local secrets (Azure connection string)
+.env.example              template for local secrets (Azure connection string, alert webhook)
 config/sources.json       Inside Airbnb URLs, files and default snapshot
 pipeline/
   utils.py                shared folders, configuration and logger
+  monitoring.py           task timings, run history (logs/runs.jsonl) and alert rules
+  alerts.py               sends alerts to the team chat through a webhook
   ingestion.py            download and validate the raw files (tasks 2 and 4)
   integration.py          clean, combine and validate the data with DuckDB (tasks 5-7)
 sql/create_tables.sql     data warehouse schema (star schema)
@@ -72,7 +75,10 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pipeline.ingestion     # download and validate the raw files
 python -m pipeline.integration   # clean, combine and validate; writes evidence/
+python -m pipeline.alerts --test # send a test alert (needs ALERT_WEBHOOK_URL in .env)
 ```
+
+Each run writes its log to `logs/pipeline_<date>.log` and one summary line to `logs/runs.jsonl`.
 
 ## Data
 

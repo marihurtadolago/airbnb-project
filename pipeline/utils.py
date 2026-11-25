@@ -21,6 +21,20 @@ EVIDENCE_DIR = PROJECT_ROOT / "evidence"
 LOGS_DIR = PROJECT_ROOT / "logs"
 WAREHOUSE_FILE = PROJECT_ROOT / "warehouse" / "airbnb.duckdb"
 
+_run_id = "-"  # "-" outside a run
+
+
+def set_run_id(run_id: str) -> None:
+    """Tag every following log line with this run id (see pipeline/monitoring.py)."""
+    global _run_id
+    _run_id = run_id
+
+
+class _RunIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.run_id = _run_id
+        return True
+
 
 def load_config() -> dict:
     """Read config/sources.json and return it as a dictionary."""
@@ -47,8 +61,9 @@ def snapshot_dirs(snapshot_date: str) -> dict:
 def get_logger(name: str) -> logging.Logger:
     """Return a logger that writes to the console and to logs/pipeline_<date>.log.
 
-    All modules share the same log file per day, so one run can be followed
-    from start to end. Times are in UTC, like the pipeline schedule.
+    All modules share the same log file per day, and every line carries the
+    run id, so one run can be followed from start to end with a simple search.
+    Times are in UTC, like the pipeline schedule.
     """
     logger = logging.getLogger(name)
     if logger.handlers:  # already configured: avoid duplicated lines
@@ -58,13 +73,14 @@ def get_logger(name: str) -> logging.Logger:
     log_file = LOGS_DIR / f"pipeline_{datetime.now(timezone.utc):%Y-%m-%d}.log"
 
     formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        "%(asctime)s | %(levelname)-8s | %(run_id)s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     formatter.converter = lambda *_: datetime.now(timezone.utc).timetuple()
 
     for handler in (logging.StreamHandler(), logging.FileHandler(log_file, encoding="utf-8")):
         handler.setFormatter(formatter)
+        handler.addFilter(_RunIdFilter())
         logger.addHandler(handler)
 
     logger.setLevel(logging.INFO)
