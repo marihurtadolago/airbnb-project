@@ -107,6 +107,30 @@ HTTPError: 503 Server Error: Service Unavailable for url: https://data.insideair
 listings: 5.0% rejected (limit 1%)
 ```
 
+### Access for team members
+
+There are two different things a team member may need: seeing the alerts, and sending them from their own computer.
+
+**Seeing the alerts** needs no setup in the repository:
+
+1. Accept the invitation to the **Madrid Airbnb pipeline** Slack workspace (any admin can send it with *Invite teammates*).
+2. Join the `#pipeline-alerts` channel.
+3. In the channel settings, set notifications to **All new messages**, so a CRITICAL alert shows up on your phone or desktop.
+
+**Sending alerts from your own computer** (for example, when you run the pipeline or the forced-failure test) needs the webhook URL in your local `.env` file. There are two ways to get it:
+
+- **Recommended:** ask a workspace admin to add you as a collaborator of the Slack app (*api.slack.com/apps* > Madrid Airbnb pipeline > *Collaborators*). You can then open *Incoming Webhooks* in the same page and copy the URL yourself.
+- Ask a teammate who has it to send it to you in a **private** Slack message.
+
+Then add it to `.env` and check it with `python -m pipeline.alerts --test`.
+
+Rules for the URL, because anyone who has it can post in our channel:
+
+- never commit it, never paste it in a channel, an issue, a pull request or a screenshot;
+- it only lives in each member's `.env` file and, in production, in the job's secrets.
+
+**If the URL leaks**, go to *api.slack.com/apps* > Madrid Airbnb pipeline > *Incoming Webhooks*, remove the old webhook and add a new one for `#pipeline-alerts`. The old URL stops working at once. Then share the new URL with the team in private and update the production secret.
+
 ## 6. How it connects to the orchestration
 
 | Runner | Logging | Alert on failure |
