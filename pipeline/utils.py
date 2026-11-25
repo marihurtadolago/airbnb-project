@@ -46,16 +46,14 @@ def snapshot_dirs(snapshot_date: str) -> dict:
     """Return the raw, curated and rejected folders of one snapshot.
 
     Every snapshot gets its own folders (for example data/raw/2026-09-17/),
-    so different snapshots never overwrite each other. Folders are created
-    if they do not exist yet.
+    so different snapshots never overwrite each other. Folders are NOT created
+    here: each task creates the folder it writes to, only when it has data to
+    write, so a failed run does not leave empty folders behind.
     """
-    dirs = {
+    return {
         layer: DATA_DIR / layer / snapshot_date
         for layer in ("raw", "curated", "rejected")
     }
-    for path in dirs.values():
-        path.mkdir(parents=True, exist_ok=True)
-    return dirs
 
 
 def get_logger(name: str) -> logging.Logger:

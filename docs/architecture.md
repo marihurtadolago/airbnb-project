@@ -2,7 +2,7 @@
 
 ## 1. Architecture overview
 
-Our project uses a batch processing architecture. Python will download the Madrid Inside Airbnb datasets and coordinate every stage. Validation and transformation will run as SQL queries in DuckDB, called from Python. Cleaned files will be stored in Parquet format and loaded into a local DuckDB warehouse.
+Our project uses a batch processing architecture. Python downloads the Madrid Inside Airbnb datasets and coordinates every stage. Validation and transformation run as SQL queries in DuckDB, called from Python. Cleaned files are stored in Parquet format and will be loaded into a local DuckDB warehouse.
 
 Azure Blob Storage will hold a cloud copy of the original files. SQL queries and a dashboard will use the warehouse to compare accommodation across neighbourhoods.
 
@@ -29,13 +29,13 @@ Azure Blob Storage will be accessed through the Python SDK. Cloud credentials an
 
 The pipeline runner will coordinate the processing stages.
 
-First, it will identify the source snapshot and download the required files. The original files will be kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage.
+First, it will identify the source snapshot (automatic detection is planned) and download the required files. The original files are kept unchanged in raw storage, and a copy will be uploaded to Azure Blob Storage (planned).
 
 The validation stage will check required columns, missing values, duplicate keys, dates and numerical values. Transformation will select the required fields and convert them to suitable types.
 
-Both stages will be written as SQL queries executed by DuckDB through its Python API. DuckDB reads the compressed CSV files directly and writes Parquet, so the 8.4 million calendar rows do not have to be loaded into memory at once. Using the same engine for transformation and for the warehouse keeps the stack small.
+Both stages are written as SQL queries executed by DuckDB through its Python API. DuckDB reads the compressed CSV files directly and writes Parquet, so the 8.4 million calendar rows do not have to be loaded into memory at once. Using the same engine for transformation and for the warehouse keeps the stack small.
 
-Valid records will be written to Parquet. Rejected records will be stored separately with an explanation.
+Valid records are written to Parquet. Rejected records are stored separately with an explanation.
 
 The warehouse loading stage will read the curated files and populate DuckDB tables. SQL queries and the dashboard will use the validated warehouse outputs.
 
@@ -60,19 +60,19 @@ Source data, cleaned data and the warehouse will remain separate. This allows th
 
 ## 5. Integration rules
 
-Listings will be connected to calendar and review records through the listing identifier.
+Listings are connected to calendar and review records through the listing identifier.
 
-The neighbourhood reference table will be matched using district and neighbourhood names. Unmatched values will be reported rather than silently discarded.
+The neighbourhood reference table is matched using district and neighbourhood names. Unmatched values are rejected with a reason rather than silently discarded.
 
-Calendar and review records will remain separate in the detailed model. For combined reports, their summaries will be calculated independently before being joined to listing information.
+Calendar and review records remain separate in the detailed model. For combined reports, their summaries are calculated independently before being joined to listing information.
 
-In the selected reviews file, the combination of listing_id and id is unique. Review ID alone will not be used as the record key.
+In the selected reviews file, the combination of listing_id and id is unique. Review ID alone is not used as the record key.
 
 ## 6. Cluster design decision
 
 We will start without a distributed cluster.
 
-The selected listings, calendar and reviews files contain approximately ten million records in total. The record counts have been confirmed on a local computer. However, the full transformation and warehouse workload has not yet been measured.
+The selected listings, calendar and reviews files contain approximately ten million records in total. Ingestion, validation and integration of these records run on a laptop: the integration stage takes about 10 seconds (see `evidence/2026-09-17_integration_report.json`). Warehouse loading and the Azure upload have not been measured yet.
 
 A single-machine design is easier for our team to develop, test and explain. A cluster would introduce additional deployment and coordination work before we have evidence that it is needed.
 
@@ -86,9 +86,9 @@ Apache Airflow will start the pipeline once a day at 06:00 UTC. In production, a
 
 If no new snapshot is found, the run will record that there is no update. If new data is available, the pipeline will process it and mark the snapshot as complete in the processed_snapshots table of the warehouse only after all required stages succeed.
 
-The runner will prevent overlapping executions. Loading the same snapshot again must not create duplicate warehouse records.
+Overlapping executions must be prevented. In Airflow, `max_active_runs=1` does this. In production, scheduled Azure container job executions can overlap, so the runner will take a lock (a lease on a blob in Azure Blob Storage) before downloading, changing and uploading the warehouse. Loading the same snapshot again must not create duplicate warehouse records.
 
-Logs will record progress, record counts, durations and errors. Alerts will notify the team when a required stage fails. Their detailed implementation belongs to the orchestration and monitoring tasks.
+Logs record progress, record counts, durations and errors, and each run is summarised in `logs/runs.jsonl`. Alerts notify the team through a chat webhook when a run fails. The design is described in [logging_alerting.md](logging_alerting.md).
 
 ## 8. Failure handling and access
 
@@ -98,19 +98,17 @@ The raw files and Azure copy will allow the team to repeat processing if local d
 
 Only one process will write to the local warehouse at a time. Dashboard refreshes and queries will be coordinated with warehouse publication.
 
-Reviewer names and comments will be excluded from curated outputs because they are not needed for the analysis. Public outputs will contain aggregate results.
+Reviewer names, reviewer ids and comments are never read, because they are not needed for the analysis. Public outputs will contain aggregate results.
 
 ## 9. Implementation status
 
-A first local prototype was discarded. Ingestion, validation and transformation are being reimplemented, with DuckDB as the processing engine.
+Local ingestion, transformation and integration are implemented. The repository includes an integration report for snapshot 2026-09-17. The pipeline produces curated Parquet files, rejected records and a listing-level summary. Azure storage, automatic snapshot detection, scheduled execution and warehouse loading are still pending. The warehouse schema is defined in SQL.
 
-The agreed design includes Azure Blob Storage, curated Parquet files and a DuckDB warehouse. Their implementation is still pending in the work reported here.
-
-The orchestration plan has been written. Its implementation, integrated processing, alerting and dashboard delivery are still pending. The architecture describes the intended system and does not claim that all components are already deployed.
+Logging and failure alerts are implemented for the local runs. The orchestration plan has been written, but the Airflow DAG and the production job are not implemented yet. Dashboard delivery is also pending. The architecture describes the intended system and does not claim that all components are already deployed.
 
 ## Architecture diagram
 
-Solid arrows show the core local path being implemented for Checkpoint 2. Dashed arrows show planned components and connections.
+Solid arrows show implemented components and connections. Dashed arrows show planned ones.
 
 ```mermaid
 flowchart TD
@@ -118,12 +116,12 @@ flowchart TD
 
     subgraph LOCAL["Local computer"]
         INGEST --> RAW["Original files"]
-        INGEST --> LOGS["Download logs"]
+        INGEST --> LOGS["Logs and run history"]
         RAW --> CHECKS["Quality checks"]
         CHECKS --> REPORTS["Validation reports"]
-        CHECKS -.-> TRANSFORM["Transformation and integration (DuckDB)"]
-        TRANSFORM -.-> PARQUET["Curated Parquet"]
-        TRANSFORM -.-> REJECTS["Rejected records"]
+        CHECKS --> TRANSFORM["Transformation and integration (DuckDB)"]
+        TRANSFORM --> PARQUET["Curated Parquet"]
+        TRANSFORM --> REJECTS["Rejected records"]
         PARQUET -.-> WAREHOUSE["DuckDB warehouse"]
     end
 
@@ -131,8 +129,8 @@ flowchart TD
     SCHEDULER["Daily scheduler"] -.-> INGEST
     WAREHOUSE -.-> DASHBOARD["Dashboard"]
 
-    INGEST -.-> ALERTS["Failure alerts"]
-    CHECKS -.-> ALERTS
-    TRANSFORM -.-> ALERTS
+    INGEST --> ALERTS["Failure alerts"]
+    CHECKS --> ALERTS
+    TRANSFORM --> ALERTS
     WAREHOUSE -.-> ALERTS
 ```

@@ -30,7 +30,8 @@ log = get_logger("ingestion")
 # are listed, so extra columns added by Inside Airbnb do not break the run.
 REQUIRED_COLUMNS = {
     "listings": {"id", "host_id", "neighbourhood_cleansed", "neighbourhood_group_cleansed",
-                 "room_type", "accommodates", "price"},
+                 "room_type", "accommodates", "price",
+                 "last_scraped"},  # collection date, used as the upper limit for review dates
     "calendar": {"listing_id", "date", "available", "minimum_nights", "maximum_nights"},
     "reviews": {"listing_id", "id", "date"},
     "neighbourhoods": {"neighbourhood_group", "neighbourhood"},
@@ -55,6 +56,7 @@ def download_file(url: str, target: Path) -> int:
     part_file = target.with_name(target.name + ".part")
     with requests.get(url, stream=True, timeout=TIMEOUT_SECONDS) as response:
         response.raise_for_status()  # stop on 404, 500, ... instead of saving an error page
+        target.parent.mkdir(parents=True, exist_ok=True)  # only once there is a file to save
         with open(part_file, "wb") as f:
             for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
                 f.write(chunk)
@@ -90,18 +92,26 @@ def download_files(snapshot_date: str) -> dict:
     return downloaded
 
 
-def read_header(path: Path) -> list:
-    """Return the column names of a CSV file, compressed (.gz) or not."""
+def read_header_and_first_row(path: Path) -> tuple:
+    """Return the column names of a CSV file (compressed or not) and its first data row.
+
+    The first row is None when the file only contains the header. A compressed
+    file with only a header still has a size above zero, so checking the size
+    alone is not enough to detect an empty dataset.
+    """
     opener = gzip.open if path.suffix == ".gz" else open
     with opener(path, "rt", encoding="utf-8", newline="") as f:
-        return next(csv.reader(f))
+        reader = csv.reader(f)
+        header = next(reader, [])
+        return header, next(reader, None)
 
 
 @monitored_task
 def validate_raw(snapshot_date: str) -> dict:
     """Task 4: quality gate on the raw files.
 
-    Checks that each file exists, is not empty and contains the required columns.
+    Checks that each file exists, contains the required columns and has at
+    least one data row.
     Bad files will not fix themselves, so this task does not retry: it raises an
     error and stops the run. Returns a summary per dataset for the evidence report.
     """
@@ -119,13 +129,17 @@ def validate_raw(snapshot_date: str) -> dict:
             problems.append(f"{dataset}: file is empty ({path.name})")
             continue
 
-        missing = REQUIRED_COLUMNS[dataset] - set(read_header(path))
+        header, first_row = read_header_and_first_row(path)
+        missing = REQUIRED_COLUMNS[dataset] - set(header)
         if missing:
             problems.append(f"{dataset}: missing columns {sorted(missing)}")
             continue
+        if first_row is None:
+            problems.append(f"{dataset}: header only, no data rows ({path.name})")
+            continue
 
         summary[dataset] = {"file": path.name, "size_mb": round(path.stat().st_size / 1e6, 1)}
-        log.info("%s: raw file OK (%s MB, required columns present)",
+        log.info("%s: raw file OK (%s MB, required columns and data rows present)",
                  dataset, summary[dataset]["size_mb"])
 
     if problems:
