@@ -1,7 +1,7 @@
 """Send pipeline alerts to the team chat through an incoming webhook.
 
-The webhook URL is read from ALERT_WEBHOOK_URL in the .env file. The same
-message works for Discord, Slack and Teams incoming webhooks. If the variable
+The webhook URL is read from ALERT_WEBHOOK_URL in the .env file. The message format works for Discord and Slack incoming webhooks
+(Microsoft Teams expects a different format and is not supported). If the variable
 is empty, the alert is only written to the log, so the pipeline still runs on a
 computer without any setup.
 

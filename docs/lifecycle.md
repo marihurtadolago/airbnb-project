@@ -24,7 +24,7 @@ Python reads the dataset URLs from config/sources.json and downloads the files.
 
 Each download is first saved with a temporary .part extension. When it finishes successfully, the file receives its final name. Progress and errors are recorded in a log.
 
-The download step is implemented in pipeline/ingestion.py. Files that are already in raw storage are not downloaded again, so a failed run can be repeated safely. The planned daily process will check for new snapshots. If no new snapshot is available, it will record that the check finished without an update.
+This step is implemented in `pipeline/ingestion.py`, and the four files of snapshot 2026-09-17 have been downloaded with it. A file that is already in raw storage is not downloaded again, so a failed run can be repeated safely. The planned daily process will check for new snapshots. If no new snapshot is available, it will record that the check finished without an update.
 
 ## 3. Raw storage
 
@@ -38,38 +38,44 @@ Large datasets and credentials will remain outside GitHub. The repository will c
 
 ## 4. Validation
 
-Before transforming the data, we check file readability, required columns, missing values and duplicate keys.
+Validation runs at two points.
 
-The completed local checks found these record counts.
+Before transformation (`validate_raw`), each file must exist, contain the required columns and have at least one data row.
+
+During and after transformation (`transform_clean` and `validate_curated`), each record is checked for missing or invalid keys, duplicate keys, valid dates, numeric values, availability values, known room types and matching listings and neighbourhoods. The run stops if a dataset is empty or no valid listing remains.
+
+The integration report (`evidence/2026-09-17_integration_report.json`) records these counts.
 
 | Dataset | Records |
 |---|---:|
 | Listings | 23,109 |
 | Calendar | 8,438,629 |
-| Reviews | approx. 1.5 million |
+| Reviews | 1,524,765 |
 | Neighbourhoods | 128 |
 
-No missing values were found in the selected columns.
+All records passed validation: no record was rejected. Prices that are present but cannot be converted to a number are counted in the report; there were none in this snapshot.
 
-The checked keys are unique for listings, calendar and neighbourhoods. Some review IDs appear under different listings, but the combination of listing_id and id is unique in this file. We will use this combination as the review key.
+The checked keys are unique for listings, calendar and neighbourhoods. Some review IDs appear under different listings, but the combination of listing_id and id is unique in this file. This combination is used as the review key.
 
-Validation runs in two gates. Before transformation, validate_raw checks that every file exists, is not empty and has the required columns. After transformation, validate_curated checks unique keys and that every listing and neighbourhood matches its reference table. Dates, numerical fields, availability values and relationships between datasets are checked row by row during transformation (section 5). If a gate fails, the run stops.
+The snapshot label is not the collection date. The data was collected between 19 and 22 September 2026, so review dates are checked against the latest collection date (`last_scraped`), not against 17 September.
+
+Validation never edits the raw files. Invalid records are moved to the rejected layer with their reason.
 
 ## 5. Transformation and integration
 
-This stage is implemented in pipeline/integration.py. SQL queries executed by DuckDB from Python select the columns needed for analysis, remove unnecessary spaces and convert values to suitable types. DuckDB reads the compressed source files directly and writes Parquet without loading whole datasets into memory.
+This stage is implemented in `pipeline/integration.py`. SQL queries executed by DuckDB from Python select the columns needed for analysis, remove unnecessary spaces and convert values to suitable types. DuckDB reads the compressed source files directly and writes Parquet without loading whole datasets into memory. The whole stage takes about 10 seconds for snapshot 2026-09-17.
 
-Records that fail the agreed validation rules are stored separately with a rejection reason. Unusual values will be investigated before deciding whether to exclude them.
+Records that fail the validation rules are stored separately with a rejection reason. A non-empty price that cannot be converted is kept as a missing price, so the listing still counts, but it is counted and logged as a warning.
 
 Listings are matched to the neighbourhood reference table using district and neighbourhood names. Calendar and review records are linked to listings through listing_id.
 
-Calendar and review summaries are calculated separately before combining them with listing information. A direct join between both detailed datasets would multiply records and produce incorrect counts.
+Calendar and review summaries are calculated separately before being combined with listing information in `listing_summary`. A direct join between both detailed datasets would multiply records and produce incorrect counts.
 
-Reviewer names and comments are never read from the source file, because they are not needed for the planned analysis.
+Reviewer names, reviewer ids and comments are never read, because they are not needed for the analysis.
 
 ## 6. Curated storage
 
-Cleaned datasets are saved as Parquet files in data/curated/2026-09-17/.
+Cleaned datasets are saved as Parquet files in data/curated/2026-09-17/, together with `listing_summary.parquet`.
 
 Rejected records are saved in data/rejected/2026-09-17/ with the reasons for rejection. For snapshot 2026-09-17 no record was rejected (see evidence/2026-09-17_integration_report.json).
 
@@ -79,7 +85,7 @@ Outputs identify their source snapshot. Original files will remain separate so t
 
 The cleaned data will be loaded into a local DuckDB warehouse.
 
-The warehouse will contain related tables for listings, neighbourhoods, dates, availability and review activity. Its detailed model and loading process will be developed as a separate team task.
+The warehouse will contain related tables for listings, neighbourhoods, dates, availability and review activity. The model is described in [data_model.md](data_model.md) and its schema is defined in `sql/create_tables.sql`. The loading step is still pending.
 
 Processing the same snapshot again must not create duplicate warehouse records. An incomplete load must not replace the last successful published results.
 
@@ -99,15 +105,19 @@ After grading, the team will review which files still need to be retained. Unnec
 
 Rejected records will be accessible only to the team and kept only while needed to investigate data quality problems.
 
+Daily log files are planned to be kept for 30 days, as described in [logging_alerting.md](logging_alerting.md). Automatic deletion of old logs is not implemented yet.
+
 ## Current status
 
-Ingestion, raw storage, validation, transformation, integration and curated storage work end to end on a local computer for snapshot 2026-09-17. Every run is logged, and a failed run sends an alert (see the [logging and alerting design](logging_alerting.md)).
+Local ingestion, transformation and integration are implemented. The repository includes an integration report for snapshot 2026-09-17. The pipeline produces curated Parquet files, rejected records and a listing-level summary. Azure storage, automatic snapshot detection, scheduled execution and warehouse loading are still pending. The warehouse schema is defined in SQL.
 
-The Azure copy of the raw files, warehouse loading, dashboard delivery and the retention review remain planned stages.
+Dashboard delivery and retention are also planned stages.
+
+This document describes the lifecycle design. It does not claim that the complete pipeline is already implemented.
 
 ## Lifecycle diagram
 
-Solid arrows show stages that are implemented and tested. Dashed arrows show planned stages.
+Solid arrows show implemented stages. Dashed arrows show planned stages.
 
 ```mermaid
 flowchart TD
@@ -120,6 +130,7 @@ flowchart TD
     D --> G["Transformation and integration (DuckDB)"]
     G --> H["Curated Parquet files"]
     G --> I["Rejected records"]
+    G --> E
     H -.-> J["DuckDB warehouse"]
     J -.-> K["SQL queries and dashboard"]
 

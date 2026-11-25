@@ -1,6 +1,6 @@
 # Data warehouse model
 
-**Status: in progress.** The schema is defined in [sql/create_tables.sql](../sql/create_tables.sql) and has been tested in DuckDB. The loading step (`load_warehouse`) and the open decisions in section 5 are still pending.
+**Status: in progress.** The schema is defined in [sql/create_tables.sql](../sql/create_tables.sql) and has been tested in DuckDB (it can be created more than once without errors). The loading step (`load_warehouse`) and the open decisions in section 5 are still pending.
 
 ## 1. Purpose
 
@@ -91,14 +91,14 @@ The view `vw_listing_summary` gives the dashboard one row per listing of the lat
 
 **Decision:** the fact tables contain `neighbourhood_key` directly, so the neighbourhood is reached in one join. In a snowflake design, the facts would only contain `listing_id`, and the neighbourhood would be reached through `dim_listing` (two joins).
 
-**Why:** we measured both versions with the 8.4 million real availability rows of snapshot 2026-09-17 in DuckDB, running the same query (average availability by neighbourhood):
+**Why:** we measured both versions with the 8.4 million real availability rows of snapshot 2026-09-17 in DuckDB, running the same query (average availability by neighbourhood). The script is [evidence/benchmark_star_vs_snowflake.py](../evidence/benchmark_star_vs_snowflake.py) and its output is saved in `evidence/benchmark_star_vs_snowflake_2026-09-17.json`:
 
 | | Snowflake | Star |
 |---|---|---|
 | Warehouse size | 19.1 MB | 19.1 MB |
-| Query time (median of 9 runs) | 162 ms | 82 ms |
+| Query time (median of 9 runs) | 139.5 ms | 84.0 ms |
 
-The extra column costs almost no space, because DuckDB stores data by column and compresses repeated values: the 365 consecutive rows of a listing all have the same neighbourhood, so the value is stored once with a repeat count. The query is about twice as fast because one join is removed. Star schemas are also easier to use in dashboard tools and easier to explain.
+The extra column costs almost no space, because DuckDB stores data by column and compresses repeated values: the 365 consecutive rows of a listing all have the same neighbourhood, so the value is stored once with a repeat count. The query is about 1.7 times faster because one join is removed. Absolute timings depend on the machine; the script can be run again to reproduce the comparison. Star schemas are also easier to use in dashboard tools and easier to explain.
 
 **Trade-off:** the neighbourhood of a listing is stored in more than one place, so the load must keep them consistent. This is checked by `validate_curated`.
 
@@ -125,7 +125,7 @@ This also supports the orchestration plan: a snapshot can be reloaded by deletin
 
 **Decision:** relationships are documented and checked by the pipeline, but not declared as foreign keys in DuckDB.
 
-**Why:** foreign keys would force a strict delete and insert order during the idempotent reload of a snapshot. The same guarantees are already enforced before loading by `validate_curated` (every `listing_id` and neighbourhood must match its reference), which stops the run if a check fails.
+**Why:** foreign keys would force a strict delete and insert order during the idempotent reload of a snapshot. The same guarantees are already enforced before loading by `validate_curated` (every `listing_id` and neighbourhood must match its reference, and no output may be empty), which stops the run if a check fails.
 
 ### 3.7 Privacy by design
 

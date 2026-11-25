@@ -15,19 +15,28 @@ The core of the pipeline works end to end on a laptop. It downloads the four fil
 | Working ingestion and integration | Working locally. The Azure copy is pending | `pipeline/ingestion.py`, `pipeline/integration.py`, [evidence report](../evidence/2026-09-17_integration_report.json) |
 | Data warehouse model | In progress: star schema defined and tested, load pending | [docs/data_model.md](data_model.md), `sql/create_tables.sql` |
 | Orchestration plan | Done. The DAG and the production job are not written yet | [docs/orchestration_plan.md](orchestration_plan.md) |
-| Logging and alerting design | Designed and implemented | [docs/logging_alerting.md](logging_alerting.md), `pipeline/monitoring.py`, `pipeline/alerts.py` |
+| Logging and alerting design | Implemented for local runs. Log upload to Azure, log retention and the missed-run alert are pending | [docs/logging_alerting.md](logging_alerting.md), `pipeline/monitoring.py`, `pipeline/alerts.py` |
 
 ## Evidence from the latest run
 
 | Step | Result |
 |---|---|
-| Download of the four files (about 206 MB) | 109 s |
+| Download of the four files (about 206 MB) | 13 to 109 s depending on the connection |
 | Raw validation | 4 of 4 files passed |
-| Cleaning and integration | 8,438,629 calendar rows, 1,524,765 reviews, 23,109 listings and 128 neighbourhoods. 0 rows rejected |
-| Curated validation | 7 of 7 checks passed |
+| Cleaning and integration | 8,438,629 calendar rows, 1,524,765 reviews, 23,109 listings and 128 neighbourhoods. 0 rows rejected, 0 unconvertible prices |
+| Curated validation | 12 of 12 checks passed |
 | Duration of cleaning, integration and validation | about 9 s |
 
 Each run gets a run id that appears on every log line, and one summary line is added to `logs/runs.jsonl`. A run that was forced to fail (a snapshot date that does not exist) produced a CRITICAL alert naming the failed task. In that test the alert was only written to the log, because no team webhook was configured yet. Delivery to a webhook was tested with a local test server.
+
+After a review of the code, the validation rules were tightened and tested with deliberately broken sample files:
+
+- listings without a room type are rejected;
+- prices that are present but cannot be converted are counted and logged as a warning;
+- header-only files, empty outputs or a snapshot without valid listings stop the run;
+- `last_scraped` is a required column, because it is the upper limit for review dates (the data was collected between 19 and 22 September, after the snapshot label of 17 September).
+
+The star versus snowflake comparison in the data model is reproducible with `evidence/benchmark_star_vs_snowflake.py`.
 
 ## Main decisions since Checkpoint 1
 

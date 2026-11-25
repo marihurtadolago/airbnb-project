@@ -12,6 +12,8 @@ Run the whole pipeline **automatically once a day**. Each daily run must:
 
 Inside Airbnb does not publish daily, so most runs will find nothing new. This is expected, and it still satisfies the requirement that all processes are orchestrated to run at least once a day.
 
+**Status:** this document is the orchestration design. The task functions for tasks 2, 4, 5, 6 and 7 are implemented in `pipeline/ingestion.py` and `pipeline/integration.py`, with logging and failure alerts. The DAG, `run_daily.py`, `checks.py`, `docker-compose.yml`, the warehouse tasks and `deploy/create_schedule.py` are not implemented yet.
+
 ---
 
 ## 2. Technology Stack and Decisions
@@ -28,7 +30,7 @@ Inside Airbnb does not publish daily, so most runs will find nothing new. This i
 | Cloud storage | Azure Blob Storage |
 | Snapshot tracking | `processed_snapshots`, a metadata table inside the data warehouse |
 | Schedule | Daily run, in UTC |
-| Task timeout | 60 minutes |
+| Task timeout | 60 minutes (provisional) |
 
 ---
 
@@ -40,9 +42,9 @@ Inside Airbnb does not publish daily, so most runs will find nothing new. This i
 | Schedule | `0 6 * * *`: every day at 06:00 UTC |
 | Catch-up | Disabled (`catchup=False`). The source is a snapshot, not a daily feed, so missed days do not need back-filling |
 | Concurrency | `max_active_runs=1`. This also protects the DuckDB warehouse, which accepts only one writing process at a time |
-| Task timeout | 60 minutes per task (`execution_timeout`) |
+| Task timeout | 60 minutes per task (`execution_timeout`), provisional |
 
-**Why 60 minutes is realistic:** on a day with a new snapshot, ingesting and loading the ~8.4M-row `calendar.csv` fits within the limit. On a day with no new snapshot, the run only executes `check_new_snapshot` and finishes in under a minute.
+**Why 60 minutes, and why it is provisional:** the measured stages are far below the limit. In our test runs, downloading the four files (about 206 MB) took between 13 seconds and about 2 minutes, depending on the connection, and validation, transformation and integration of the ~10 million rows take about 10 seconds (`evidence/2026-09-17_integration_report.json`). The Azure upload and the warehouse load have not been measured yet, so the limit is kept generous and will be reviewed once every task has been timed. On a day with no new snapshot, the run only executes `check_new_snapshot` and finishes in under a minute.
 
 ---
 
@@ -66,7 +68,7 @@ flowchart TD
 
 ## 5. Tasks and Dependencies
 
-Tasks run in strict sequence. A task only starts if the previous one succeeded. Every task has a 60-minute timeout.
+Tasks run in strict sequence. A task only starts if the previous one succeeded. Every task has a provisional 60-minute timeout.
 
 | # | Task | Purpose | Retries |
 |---|---|---|---|
@@ -112,7 +114,7 @@ The same snapshot must never be loaded twice, and re-running a task must never c
 
 ## 8. Production Equivalent
 
-Leaving Airflow running permanently on a laptop is not realistic, so the repository includes a configuration that would run the same pipeline daily in production, even if we do not leave it running. We compared three options, all using the same schedule (`0 6 * * *`, UTC) and the same task order:
+Leaving Airflow running permanently on a laptop is not realistic, so the repository will include a configuration that would run the same pipeline daily in production, even if we do not leave it running. We compared three options, all using the same schedule (`0 6 * * *`, UTC) and the same task order:
 
 | Option | How it works |
 |---|---|
@@ -134,7 +136,7 @@ Only the runner changes between options. The task functions are the same.
 |---|---|
 | Warehouse persistence | The container is deleted after each run, so the DuckDB file cannot live inside it. `run_daily.py` downloads `warehouse/airbnb.duckdb` from Azure Blob Storage at the start and uploads it again only after `mark_processed` succeeds. A failed run therefore never replaces the last successful warehouse |
 | Retries and timeouts | Without Airflow, `run_daily.py` applies the same rules as section 5: the retry count and the 60-minute timeout of each task |
-| No overlapping runs | The job is configured with parallelism 1, which replaces `max_active_runs=1` |
+| No overlapping runs | Parallelism 1 only limits the replicas inside one execution: by default, a new scheduled execution can start while the previous one is still running. `run_daily.py` will therefore take a lock before touching the warehouse: it acquires a lease on a lock blob in Azure Blob Storage, and an execution that cannot get the lease ends without changes. The lease is released at the end, and it expires by itself if the container crashes |
 | Alerts | Failures are logged and sent as an alert by the pipeline itself, instead of an Airflow failure callback. The detailed design is in the [logging and alerting document](logging_alerting.md) |
 | Credentials | The Azure connection settings are passed to the job as secrets, never stored in the repository |
 
@@ -188,6 +190,8 @@ with DAG(
 
 ## 10. Repository Files
 
+None of these files exists yet. They will be added when the orchestration is implemented.
+
 ```text
 dags/madrid_airbnb_daily.py     # Airflow DAG
 pipeline/run_daily.py           # single entry point (used by a container job / cron)
@@ -196,4 +200,4 @@ docker-compose.yml              # local Airflow
 docs/orchestration_plan.md      # this document
 ```
 
-Option B (section 8) also adds `deploy/create_schedule.py`, which creates the scheduled Azure container job with the Azure SDK.
+Option B (section 8) will also add `deploy/create_schedule.py`, which creates the scheduled Azure container job with the Azure SDK.

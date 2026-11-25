@@ -46,20 +46,28 @@ def raw_csv(raw_dir, name: str) -> str:
     return f"read_csv('{path}', header = true, all_varchar = true)"
 
 
-def write_split(con, table: str, curated_dir, rejected_dir) -> dict:
+def write_split(con, table: str, curated_dir, rejected_dir, drop: tuple = ()) -> dict:
     """Write valid rows to curated/<table>.parquet and invalid rows to rejected/.
 
     The temporary table must have a reject_reason column, NULL for valid rows.
+    Columns listed in `drop` are helper columns kept in the rejected file (to
+    investigate problems) but removed from the curated file.
+    An empty dataset stops the run: publishing empty results as a successful
+    integration would hide a problem with the source.
     Returns the counts used in the evidence report.
     """
+    total, = con.execute(f"SELECT count(*) FROM {table}").fetchone()
+    if total == 0:
+        raise ValueError(f"{table}: the dataset has no rows")
+
+    excluded = ", ".join(("reject_reason",) + drop)
     con.execute(f"""
-        COPY (SELECT * EXCLUDE (reject_reason) FROM {table} WHERE reject_reason IS NULL)
+        COPY (SELECT * EXCLUDE ({excluded}) FROM {table} WHERE reject_reason IS NULL)
         TO '{curated_dir / table}.parquet' (FORMAT parquet)""")
     con.execute(f"""
         COPY (SELECT * FROM {table} WHERE reject_reason IS NOT NULL)
         TO '{rejected_dir / table}.parquet' (FORMAT parquet)""")
 
-    total, = con.execute(f"SELECT count(*) FROM {table}").fetchone()
     reasons = dict(con.execute(f"""
         SELECT reject_reason, count(*) FROM {table}
         WHERE reject_reason IS NOT NULL GROUP BY 1 ORDER BY 2 DESC""").fetchall())
@@ -79,6 +87,8 @@ def transform_clean(snapshot_date: str) -> dict:
     """
     dirs = snapshot_dirs(snapshot_date)
     raw, cur, rej = dirs["raw"], dirs["curated"], dirs["rejected"]
+    cur.mkdir(parents=True, exist_ok=True)
+    rej.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()  # in-memory database, only used as a processing engine
     counts = {}
 
@@ -97,7 +107,11 @@ def transform_clean(snapshot_date: str) -> dict:
 
     # Listings: only the columns needed for the analysis are kept.
     # Host names, descriptions, URLs and other personal or free-text fields are dropped.
-    # price arrives as text like "$1,234.00"; an empty price is kept as NULL, not rejected.
+    # price arrives as text like "$1,234.00". An empty price is kept as NULL, not rejected.
+    # A non-empty price that cannot be converted is also kept as NULL (the listing is still
+    # valid for counts and availability), but it is counted and reported as a warning, so a
+    # conversion failure is never confused with a missing price. price_raw keeps the original
+    # text: it stays in the rejected file and is dropped from the curated file.
     con.execute(f"""
         CREATE TABLE listings AS
         WITH typed AS (
@@ -107,7 +121,8 @@ def transform_clean(snapshot_date: str) -> dict:
                    trim(neighbourhood_cleansed)      AS neighbourhood,
                    room_type,
                    TRY_CAST(accommodates AS INTEGER) AS accommodates,
-                   TRY_CAST(replace(replace(price, '$', ''), ',', '') AS DECIMAL(10, 2)) AS price
+                   TRY_CAST(replace(replace(price, '$', ''), ',', '') AS DECIMAL(10, 2)) AS price,
+                   nullif(trim(price), '')           AS price_raw
             FROM {raw_csv(raw, 'listings')}
         )
         SELECT t.*,
@@ -115,13 +130,24 @@ def transform_clean(snapshot_date: str) -> dict:
                  WHEN t.listing_id IS NULL THEN 'missing or invalid id'
                  WHEN count(*) OVER (PARTITION BY t.listing_id) > 1 THEN 'duplicate id'
                  WHEN n.neighbourhood IS NULL THEN 'neighbourhood not in reference table'
-                 WHEN t.room_type NOT IN {ROOM_TYPES} THEN 'unknown room_type'
+                 WHEN t.room_type IS NULL OR t.room_type NOT IN {ROOM_TYPES}
+                   THEN 'missing or unknown room_type'
                  WHEN t.accommodates IS NULL OR t.accommodates <= 0 THEN 'invalid accommodates'
                END AS reject_reason
         FROM typed t
         LEFT JOIN (SELECT * FROM neighbourhoods WHERE reject_reason IS NULL) n
                USING (district, neighbourhood)""")
-    counts["listings"] = write_split(con, "listings", cur, rej)
+    counts["listings"] = write_split(con, "listings", cur, rej, drop=("price_raw",))
+    if counts["listings"]["rows_valid"] == 0:
+        raise ValueError("listings: no valid listings left after cleaning")
+
+    unparseable, = con.execute("""
+        SELECT count(*) FROM listings
+        WHERE reject_reason IS NULL AND price_raw IS NOT NULL AND price IS NULL""").fetchone()
+    counts["listings"]["price_unparseable"] = unparseable
+    if unparseable:
+        log.warning("listings: %d non-empty prices could not be converted and were kept as NULL",
+                    unparseable)
     con.execute("CREATE TABLE valid_ids AS SELECT listing_id FROM listings WHERE reject_reason IS NULL")
 
     # Calendar: one row per listing and day. available arrives as 't' / 'f'.
@@ -154,6 +180,8 @@ def transform_clean(snapshot_date: str) -> dict:
     # the latest collection date found in the listings file (last_scraped).
     last_collected, = con.execute(f"""
         SELECT max(TRY_CAST(last_scraped AS DATE)) FROM {raw_csv(raw, 'listings')}""").fetchone()
+    if last_collected is None:
+        raise ValueError("listings: no valid last_scraped date, cannot check review dates")
     log.info("data collected up to %s (snapshot label %s)", last_collected, snapshot_date)
 
     # Reviews: only listing_id, review id and date are read.
@@ -233,6 +261,8 @@ def validate_curated(snapshot_date: str) -> dict:
     cur = snapshot_dirs(snapshot_date)["curated"]
     p = lambda name: f"'{cur}/{name}.parquet'"  # path of a curated file
     checks = {
+        **{f"{name}: no rows": f"SELECT CAST(count(*) = 0 AS INTEGER) FROM {p(name)}"
+           for name in ("neighbourhoods", "listings", "calendar", "reviews", "listing_summary")},
         "listings: duplicate listing_id":
             f"SELECT count(*) - count(DISTINCT listing_id) FROM {p('listings')}",
         "calendar: duplicate (listing_id, date)":

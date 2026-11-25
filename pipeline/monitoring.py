@@ -37,6 +37,8 @@ def _record_task(name: str, status: str, start: float) -> float:
     _run["tasks"][name] = {"status": status, "seconds": seconds}
     if status == "failed":
         _run["failed_task"] = name
+    elif _run.get("failed_task") == name:  # it succeeded on a retry
+        del _run["failed_task"]
     return seconds
 
 

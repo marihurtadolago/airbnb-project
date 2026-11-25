@@ -59,7 +59,7 @@ Example line:
 
 **In production** (scheduled Azure container job), the container is deleted after each run, so local files would be lost. The console output is collected automatically by Azure Log Analytics, where it can be searched by run id. The log file and `runs.jsonl` are also uploaded to Blob Storage under `logs/` at the end of the run, next to `raw/` and `curated/`. This upload will be added together with `pipeline/cloud.py`.
 
-**Retention:** 30 days for daily log files, both local and in Log Analytics. That is enough to look into any problem and short enough that old logs do not pile up. `runs.jsonl` is small (one line per day) and is kept until the project is graded, like the rest of the evidence.
+**Retention (planned, not implemented yet):** 30 days for daily log files, both local and in Log Analytics. The code does not delete old logs yet; this will be added with the production setup. That is enough to look into any problem and short enough that old logs do not pile up. `runs.jsonl` is small (one line per day) and is kept until the project is graded, like the rest of the evidence.
 
 ## 4. Alert rules
 
@@ -69,14 +69,14 @@ Example line:
 | 2 | Validation gate failed | CRITICAL | `validate_raw` or `validate_curated` finds a problem (this is a case of rule 1, and the message shows which check failed) | Check the source data. Usually Inside Airbnb changed a column or a file |
 | 3 | Too many rejected rows | WARNING | More than 1% of the rows of a dataset are rejected in `transform_clean` | Look at `data/rejected/<snapshot>/` and the reasons in the evidence report. The run continues |
 | 4 | Source looks stale | WARNING | The latest snapshot is more than 120 days old. Repeated once a week, not every day | Check the Inside Airbnb page: they may have stopped publishing Madrid or changed their URLs |
-| 5 | Run did not happen | CRITICAL | The scheduled job did not start or crashed before Python ran | Check the Azure job or the Airflow scheduler |
+| 5 | Run did not happen (planned) | CRITICAL | The scheduled job did not start or crashed before Python ran | Check the Azure job or the Airflow scheduler |
 
 Why these thresholds:
 
 - **1% rejected rows:** snapshot 2026-09-17 rejected 0 rows out of about ten million, so a clean source is the normal case. 1% of the calendar is about 84,000 rows, which is far beyond random noise and almost always means the source format has changed.
 - **120 days:** Inside Airbnb publishes Madrid roughly every three months (about 90 days). Thirty days of margin avoids false alarms when a release is a little late.
 
-Rules 1 to 4 are implemented in `pipeline/monitoring.py`. Rule 5 cannot be detected by the pipeline itself, because the pipeline is not running. It is configured outside the code: in production, as an Azure Monitor alert rule on failed or missing executions of the container job; locally, the Airflow UI shows a missing or failed run.
+Rules 1 to 4 are implemented in `pipeline/monitoring.py` (rule 4 is not called yet, see section 8). Rule 5 is planned. Rule 5 cannot be detected by the pipeline itself, because the pipeline is not running. It is configured outside the code: in production, as an Azure Monitor alert rule on failed or missing executions of the container job; locally, the Airflow UI shows a missing or failed run.
 
 ### Avoiding alert spam
 
@@ -86,7 +86,7 @@ Rules 1 to 4 are implemented in `pipeline/monitoring.py`. Rule 5 cannot be detec
 
 ## 5. Alert channel
 
-Alerts are sent to a team chat channel through an **incoming webhook** (Discord, Slack and Teams all support them). We chose a webhook over email because:
+Alerts are sent to a team chat channel through an **incoming webhook** (Discord or Slack). Microsoft Teams webhooks expect a different message format, so Teams is not supported by the current code. We chose a webhook over email because:
 
 - it is a single HTTP request with the `requests` library we already use, with no mail server and no password to store;
 - the whole team sees the alert in the same place, and can discuss it there;
@@ -145,3 +145,4 @@ After each run, `logs/pipeline_<date>.log` shows every step with its run id, and
 - Upload of the log file and `runs.jsonl` to Blob Storage (with `pipeline/cloud.py`).
 - Azure Monitor alert rule for missing runs (rule 5), created together with the scheduled job in `deploy/`.
 - Calling `check_freshness` from `check_new_snapshot`, and adding `on_failure_callback` to the DAG, once those files exist.
+- Automatic deletion of daily log files older than 30 days.
