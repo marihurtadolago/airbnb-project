@@ -72,7 +72,7 @@ In the selected reviews file, the combination of listing_id and id is unique. Re
 
 We will start without a distributed cluster.
 
-The selected listings, calendar and reviews files contain approximately ten million records in total. The record counts have been confirmed on a local computer. However, the full transformation and warehouse workload has not yet been measured.
+The selected listings, calendar and reviews files contain approximately ten million records in total. The record counts have been confirmed on a local computer. The full cleaning, integration and validation of the snapshot takes about 9 seconds on a laptop (see evidence/2026-09-17_integration_report.json), and downloading the four files about 2 minutes. The warehouse load has not been measured yet.
 
 A single-machine design is easier for our team to develop, test and explain. A cluster would introduce additional deployment and coordination work before we have evidence that it is needed.
 
@@ -88,7 +88,7 @@ If no new snapshot is found, the run will record that there is no update. If new
 
 The runner will prevent overlapping executions. Loading the same snapshot again must not create duplicate warehouse records.
 
-Logs will record progress, record counts, durations and errors. Alerts will notify the team when a required stage fails. Their detailed implementation belongs to the orchestration and monitoring tasks.
+Logs record progress, record counts, durations and errors, and every line carries the id of its run. Alerts notify the team through a chat webhook when a run fails or the data looks wrong. Both are implemented in pipeline/monitoring.py and pipeline/alerts.py and described in the [logging and alerting design](logging_alerting.md).
 
 ## 8. Failure handling and access
 
@@ -102,15 +102,15 @@ Reviewer names and comments will be excluded from curated outputs because they a
 
 ## 9. Implementation status
 
-A first local prototype was discarded. Ingestion, validation and transformation are being reimplemented, with DuckDB as the processing engine.
+Implemented and tested on a local computer: ingestion, raw validation, transformation and integration with DuckDB, curated Parquet files, rejected records, logging and alerting.
 
-The agreed design includes Azure Blob Storage, curated Parquet files and a DuckDB warehouse. Their implementation is still pending in the work reported here.
+In progress: the DuckDB warehouse. Its schema is defined in sql/create_tables.sql, and the loading step is pending.
 
-The orchestration plan has been written. Its implementation, integrated processing, alerting and dashboard delivery are still pending. The architecture describes the intended system and does not claim that all components are already deployed.
+Planned: the Azure Blob Storage copy, the Airflow DAG and the scheduled Azure container job described in the orchestration plan, and the dashboard. The architecture describes the intended system and does not claim that all components are already deployed.
 
 ## Architecture diagram
 
-Solid arrows show the core local path being implemented for Checkpoint 2. Dashed arrows show planned components and connections.
+Solid arrows show components that are implemented and tested. Dashed arrows show planned components and connections.
 
 ```mermaid
 flowchart TD
@@ -118,12 +118,13 @@ flowchart TD
 
     subgraph LOCAL["Local computer"]
         INGEST --> RAW["Original files"]
-        INGEST --> LOGS["Download logs"]
+        INGEST --> LOGS["Run logs"]
         RAW --> CHECKS["Quality checks"]
         CHECKS --> REPORTS["Validation reports"]
-        CHECKS -.-> TRANSFORM["Transformation and integration (DuckDB)"]
-        TRANSFORM -.-> PARQUET["Curated Parquet"]
-        TRANSFORM -.-> REJECTS["Rejected records"]
+        CHECKS --> TRANSFORM["Transformation and integration (DuckDB)"]
+        TRANSFORM --> PARQUET["Curated Parquet"]
+        TRANSFORM --> REJECTS["Rejected records"]
+        TRANSFORM --> LOGS
         PARQUET -.-> WAREHOUSE["DuckDB warehouse"]
     end
 
@@ -131,8 +132,8 @@ flowchart TD
     SCHEDULER["Daily scheduler"] -.-> INGEST
     WAREHOUSE -.-> DASHBOARD["Dashboard"]
 
-    INGEST -.-> ALERTS["Failure alerts"]
-    CHECKS -.-> ALERTS
-    TRANSFORM -.-> ALERTS
+    INGEST --> ALERTS["Alerts (chat webhook)"]
+    CHECKS --> ALERTS
+    TRANSFORM --> ALERTS
     WAREHOUSE -.-> ALERTS
 ```
