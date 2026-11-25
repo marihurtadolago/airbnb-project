@@ -27,6 +27,7 @@ import time
 
 import duckdb
 
+from pipeline.monitoring import check_rejections, monitored_run, monitored_task
 from pipeline.utils import EVIDENCE_DIR, get_logger, load_config, snapshot_dirs
 
 log = get_logger("integration")
@@ -69,6 +70,7 @@ def write_split(con, table: str, curated_dir, rejected_dir) -> dict:
             "rows_rejected": rejected, "reject_reasons": reasons}
 
 
+@monitored_task
 def transform_clean(snapshot_date: str) -> dict:
     """Task 5: clean each dataset and split it into curated and rejected rows.
 
@@ -181,6 +183,7 @@ def transform_clean(snapshot_date: str) -> dict:
     return counts
 
 
+@monitored_task
 def aggregate_all(snapshot_date: str) -> dict:
     """Task 6: build listing_summary, one row per curated listing.
 
@@ -220,6 +223,7 @@ def aggregate_all(snapshot_date: str) -> dict:
     return {"listing_summary_rows": rows}
 
 
+@monitored_task
 def validate_curated(snapshot_date: str) -> dict:
     """Task 7: quality gate on the curated files.
 
@@ -268,9 +272,10 @@ def write_evidence(snapshot_date: str, report: dict) -> None:
 if __name__ == "__main__":
     date = sys.argv[1] if len(sys.argv) > 1 else load_config()["default_snapshot_date"]
     start = time.perf_counter()
-    report = {"snapshot_date": date,
-              "transform_clean": transform_clean(date),
-              "aggregate_all": aggregate_all(date),
-              "validate_curated": validate_curated(date)}
+    with monitored_run(date):
+        report = {"snapshot_date": date, "transform_clean": transform_clean(date)}
+        check_rejections(report["transform_clean"])
+        report["aggregate_all"] = aggregate_all(date)
+        report["validate_curated"] = validate_curated(date)
     report["duration_seconds"] = round(time.perf_counter() - start, 1)
     write_evidence(date, report)

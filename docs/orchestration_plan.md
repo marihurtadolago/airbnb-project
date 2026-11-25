@@ -135,7 +135,7 @@ Only the runner changes between options. The task functions are the same.
 | Warehouse persistence | The container is deleted after each run, so the DuckDB file cannot live inside it. `run_daily.py` downloads `warehouse/airbnb.duckdb` from Azure Blob Storage at the start and uploads it again only after `mark_processed` succeeds. A failed run therefore never replaces the last successful warehouse |
 | Retries and timeouts | Without Airflow, `run_daily.py` applies the same rules as section 5: the retry count and the 60-minute timeout of each task |
 | No overlapping runs | The job is configured with parallelism 1, which replaces `max_active_runs=1` |
-| Alerts | Failures are logged and sent as an alert by the pipeline itself, instead of an Airflow failure callback. The detailed design belongs to the logging and alerting document |
+| Alerts | Failures are logged and sent as an alert by the pipeline itself, instead of an Airflow failure callback. The detailed design is in the [logging and alerting document](logging_alerting.md) |
 | Credentials | The Azure connection settings are passed to the job as secrets, never stored in the repository |
 
 ---
