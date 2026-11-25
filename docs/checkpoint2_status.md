@@ -27,7 +27,7 @@ The core of the pipeline works end to end on a laptop. It downloads the four fil
 | Curated validation | 12 of 12 checks passed |
 | Duration of cleaning, integration and validation | about 9 s |
 
-Each run gets a run id that appears on every log line, and one summary line is added to `logs/runs.jsonl`. A run that was forced to fail (a snapshot date that does not exist) produced a CRITICAL alert naming the failed task. In that test the alert was only written to the log, because no team webhook was configured yet. Delivery to a webhook was tested with a local test server.
+Each run gets a run id that appears on every log line, and one summary line is added to `logs/runs.jsonl`. A run that was forced to fail (a snapshot date that does not exist) produced a CRITICAL alert naming the failed task. The alert reached the team's Slack channel `#pipeline-alerts` through its incoming webhook, together with a test alert sent with `python -m pipeline.alerts --test`.
 
 After a review of the code, the validation rules were tightened and tested with deliberately broken sample files:
 
